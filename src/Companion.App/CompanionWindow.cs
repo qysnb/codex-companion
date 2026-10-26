@@ -334,26 +334,14 @@ internal sealed partial class CompanionWindow : Window
     void RenderQuota()
     {
         var s = quota.Snapshot;
-        var prefix = s.Status switch { QuotaStatus.Stale => Local("上次读取 · 暂时无法更新\n", "Last reading · update unavailable\n", "前回の値 · 更新できません\n"), QuotaStatus.NotLoggedIn => Local("请先在 Codex 登录 ChatGPT 账户。", "Sign in to a ChatGPT account in Codex.", "Codex で ChatGPT アカウントにログインしてください。"), QuotaStatus.Loading => Local("正在读取真实额度…", "Reading current quota…", "利用枠を取得しています…"), QuotaStatus.Unavailable => Local("暂时无法读取 Codex 额度。", "Codex quota is currently unavailable.", "Codex の利用枠を取得できません。"), _ => "" };
-        var reading = quota.IsRefreshing && (s.RetryAt is null || s.RetryAt <= DateTimeOffset.Now);
         var hasData = s.FiveHour is not null || s.Weekly is not null;
-        if (s.Status is QuotaStatus.Stale or QuotaStatus.Unavailable)
-        {
-            var reason = s.FailureKind switch
-            {
-                QuotaFailureKind.Timeout => Local("读取超时", "Read timed out", "取得がタイムアウト"),
-                QuotaFailureKind.Connection => Local("连接暂时中断", "Connection interrupted", "接続が中断しました"),
-                _ => Local("暂时无法更新", "Update unavailable", "更新できません")
-            };
-            var retry = reading ? Local("正在重新连接并读取…", "Reconnecting and reading…", "再接続して取得中…")
-                : s.RetryAt is { } at && at > DateTimeOffset.Now
-                    ? Local($"{Math.Ceiling((at - DateTimeOffset.Now).TotalSeconds)} 秒后自动重试", $"Retry in {Math.Ceiling((at - DateTimeOffset.Now).TotalSeconds)}s", $"{Math.Ceiling((at - DateTimeOffset.Now).TotalSeconds)} 秒後に再試行")
-                    : Local("等待自动重试", "Waiting to retry", "再試行を待機中");
-            prefix = (hasData ? Local("上次读取 · ", "Last reading · ", "前回の値 · ") : "") + reason + "\n" + retry + (hasData ? "\n" : "");
-        }
-        else if (reading && hasData) prefix = Local("缓存 · 后台更新中\n", "Cached · updating…\n", "キャッシュ · 更新中\n");
-        bubbleText.Text = prefix + (s.FiveHour is not null || s.Weekly is not null ? FormatWindow(Local("5 小时", "5 hours", "5 時間"), s.FiveHour) + "\n\n" + FormatWindow(Local("每周", "Weekly", "週間"), s.Weekly) : "") +
-            (s.UpdatedAt is { } updated ? "\n" + Local("读取于 ", "Read at ", "取得日時 ") + updated.ToLocalTime().ToString("MM-dd HH:mm:ss") : "");
+        // Refresh, reconnect and retry stay in the background. The original read
+        // timestamp still identifies the displayed data without status banners.
+        var text = !hasData && s.Status == QuotaStatus.NotLoggedIn
+            ? Local("请先在 Codex 登录 ChatGPT 账户。", "Sign in to a ChatGPT account in Codex.", "Codex で ChatGPT アカウントにログインしてください。")
+            : FormatWindow(Local("5 小时", "5 hours", "5 時間"), s.FiveHour) + "\n\n" + FormatWindow(Local("每周", "Weekly", "週間"), s.Weekly);
+        bubbleText.Text = text + (hasData && s.UpdatedAt is { } updated
+            ? "\n" + Local("读取于 ", "Read at ", "取得日時 ") + updated.ToLocalTime().ToString("MM-dd HH:mm:ss") : "");
         bubbleTitle.Text = CharacterName(settings.Character) + " · " + Local("额度", "Quota", "利用枠");
         UpdateWindowSize();
     }

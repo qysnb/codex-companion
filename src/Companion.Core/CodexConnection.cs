@@ -69,7 +69,7 @@ public sealed class CodexConnection : ICodexConnection
                 connection = new CodexConnection(process);
                 await connection.RequestAsync("initialize", new
                 {
-                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.4.2" },
+                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.4.3" },
                     capabilities = new { experimentalApi = false }
                 }, cancellationToken).ConfigureAwait(false);
                 await connection.WriteAsync(new { method = "initialized" }, cancellationToken).ConfigureAwait(false);
