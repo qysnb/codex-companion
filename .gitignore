@@ -29,6 +29,7 @@ docs/*
 !docs/INSTALL.md
 !docs/BUILD.md
 !docs/UPDATE-0.4.1.md
+!docs/UPDATE-0.4.2.md
 !docs/VERIFICATION-PUBLIC.md
 !docs/SECURITY.md
 !docs/characters.png

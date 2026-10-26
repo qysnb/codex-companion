@@ -299,7 +299,7 @@ public sealed class QuotaService : IAsyncDisposable
     async Task<JsonElement> RequestAsync(ICodexConnection connection, string method, object parameters)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        timeout.CancelAfter(CodexRequestPolicy.TimeoutFor(method));
         try { return await connection.RequestAsync(method, parameters, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false); }
         catch (OperationCanceledException) when (!_stop.IsCancellationRequested)
         { throw new TimeoutException("Codex read deadline elapsed."); }

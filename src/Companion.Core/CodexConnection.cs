@@ -69,7 +69,7 @@ public sealed class CodexConnection : ICodexConnection
                 connection = new CodexConnection(process);
                 await connection.RequestAsync("initialize", new
                 {
-                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.4.1" },
+                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.4.2" },
                     capabilities = new { experimentalApi = false }
                 }, cancellationToken).ConfigureAwait(false);
                 await connection.WriteAsync(new { method = "initialized" }, cancellationToken).ConfigureAwait(false);
@@ -130,7 +130,7 @@ public sealed class CodexConnection : ICodexConnection
         var completion = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = completion;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stop.Token);
-        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        timeout.CancelAfter(CodexRequestPolicy.TimeoutFor(method));
         try
         {
             await WriteAsync(new { id, method, @params = parameters }, timeout.Token).ConfigureAwait(false);
