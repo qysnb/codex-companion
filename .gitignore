@@ -1,0 +1,34 @@
+**/bin/
+**/obj/
+dist/
+.tmp/
+*.user
+*.log
+
+# Local inputs, generation history, scripts and workstation-only files.
+art/
+assets/references/
+assets/characters/*/sheet.png
+scripts/
+*.ps1
+*.lnk
+.vs/
+.idea/
+.codex/
+.agents/
+.env
+.env.*
+auth.json
+settings.json
+*.pfx
+*.p12
+*.key
+
+# Keep public documentation; exclude machine-specific diagnostic receipts.
+docs/*
+!docs/INSTALL.md
+!docs/BUILD.md
+!docs/UPDATE-0.4.1.md
+!docs/VERIFICATION-PUBLIC.md
+!docs/SECURITY.md
+!docs/characters.png

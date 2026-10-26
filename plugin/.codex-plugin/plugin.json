@@ -1,0 +1,14 @@
+{
+  "name": "codex-companion",
+  "version": "0.4.1",
+  "author": { "name": "qysnb", "url": "https://github.com/qysnb" },
+  "repository": "https://github.com/qysnb/codex-companion",
+  "license": "MIT",
+  "description": "Control the local Windows animated companion and inspect its read-only Codex quota status.",
+  "skills": "./skills/",
+  "requires_local_executor": true,
+  "interface": {
+    "displayName": "Codex Companion",
+    "shortDescription": "A local animated companion for Codex on Windows."
+  }
+}

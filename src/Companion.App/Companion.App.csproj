@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><AssemblyName>CodexCompanion</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../assets/companion.ico</ApplicationIcon>
+    <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker>
+    <TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <DebugType>none</DebugType>
+    <Version>0.4.1</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Companion.Core/Companion.Core.csproj" />
+    <Content Include="../../assets/characters/**/registered.png" Link="assets/characters/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="../../assets/references/*.png" Link="assets/references/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="'$(Configuration)' == 'Debug'" />
+    <Content Include="../../assets/dialogue.json" Link="assets/dialogue.json" CopyToOutputDirectory="PreserveNewest" Condition="Exists('../../assets/dialogue.json')" />
+  </ItemGroup>
+</Project>
