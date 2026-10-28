@@ -236,7 +236,7 @@ internal sealed partial class CompanionWindow
             var snapshot = new QuotaSnapshot(QuotaStatus.Live, percent is {} p ? new(p, 300, DateTimeOffset.Now.AddMinutes(97)) : null,
                 percent is {} w ? new(w, 10080, DateTimeOffset.Now.AddDays(6).AddHours(17)) : null, DateTimeOffset.Now);
             panel.Update(snapshot, theme);
-            var width = QuotaPanel.BubbleWidth(language) - 36;
+            var width = QuotaPanel.BubbleWidth - 36;
             panel.Measure(new Size(width, double.PositiveInfinity)); panel.Arrange(new Rect(0, 0, width, panel.DesiredSize.Height)); panel.UpdateLayout();
             foreach (var row in new[] { panel.FiveHour, panel.Weekly })
             {
@@ -246,6 +246,10 @@ internal sealed partial class CompanionWindow
                         new Typeface(label.FontFamily, label.FontStyle, label.FontWeight, label.FontStretch), label.FontSize, label.Foreground, 1);
                     if (text.Width > label.ActualWidth + 1) throw new InvalidOperationException($"Quota label clipped: {language}/{label.Text}/{text.Width:0.0}/{label.ActualWidth:0.0}");
                 }
+                var bounds = row.Labels.Select(label => label.TransformToAncestor(row).TransformBounds(new Rect(0, 0, label.ActualWidth, label.ActualHeight))).ToArray();
+                if (Math.Abs((bounds[1].Left + bounds[2].Right) / 2 - width / 2) > 1 || Math.Abs(bounds[3].Right - (width - 14)) > 1 ||
+                    bounds[0].Right + 2 > bounds[1].Left || bounds[2].Right + 2 > bounds[3].Left)
+                    throw new InvalidOperationException($"Quota alignment or overlap: {language}/{percent}");
                 var expected = row.Track.ActualWidth * (percent ?? 0) / 100;
                 if (Math.Abs(row.Fill.ActualWidth - expected) > 1 || row.Track.ActualHeight != 4)
                     throw new InvalidOperationException("Quota bar does not represent the remaining percentage.");
@@ -255,7 +259,7 @@ internal sealed partial class CompanionWindow
             }
             if (previewPath is not null && language == "zh-CN" && percent == 67 && colors.Item2 == "#00A9D6")
             {
-                var surfaceWidth = QuotaPanel.BubbleWidth(language);
+                var surfaceWidth = QuotaPanel.BubbleWidth;
                 var surface = new Border { Child = panel, Width = surfaceWidth, Padding = new(17, 14, 17, 14), Background = new SolidColorBrush(Color.FromRgb(255, 250, 255)), CornerRadius = new(17) };
                 surface.Measure(new Size(surfaceWidth, double.PositiveInfinity)); surface.Arrange(new Rect(0, 0, surfaceWidth, surface.DesiredSize.Height)); surface.UpdateLayout();
                 var image = new RenderTargetBitmap((int)Math.Ceiling(surfaceWidth), (int)Math.Ceiling(surface.ActualHeight), 96, 96, PixelFormats.Pbgra32); image.Render(surface);

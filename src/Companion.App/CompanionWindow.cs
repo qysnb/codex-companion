@@ -70,12 +70,12 @@ internal sealed partial class CompanionWindow : Window
         var canvas = new Grid(); Content = canvas;
         var motion = new TransformGroup(); motion.Children.Add(pokeScale); motion.Children.Add(pokeOffset); character.RenderTransform = departing.RenderTransform = motion;
         var stack = new StackPanel();
-        var close = new Button { Content = "×", FontSize = 18, Width = 24, Height = 24, Padding = new(0), Background = Brushes.Transparent, BorderThickness = new(0), Focusable = false, ToolTip = "Close / 关闭 / 閉じる" };
+        var close = new Button { Content = "×", FontSize = 18, Width = 20, Height = 24, Padding = new(0), Background = Brushes.Transparent, BorderThickness = new(0), Focusable = false, ToolTip = "Close / 关闭 / 閉じる" };
         close.Click += (_, _) => CloseBubble();
         bubbleTitle.MinHeight = 24; bubbleTitle.Margin = new(0, 0, 24, 7);
         stack.Children.Add(bubbleTitle); stack.Children.Add(bubbleText); stack.Children.Add(quotaPanel);
         var bubbleContent = new Grid(); bubbleContent.Children.Add(stack);
-        close.HorizontalAlignment = HorizontalAlignment.Right; close.VerticalAlignment = VerticalAlignment.Top; close.Margin = new(0, -6, -9, 0);
+        close.HorizontalAlignment = HorizontalAlignment.Right; close.VerticalAlignment = VerticalAlignment.Top; close.Margin = new(0, -6, -15, 0);
         bubbleContent.Children.Add(close);
         bubble = new Border { Child = bubbleContent, Background = new SolidColorBrush(Color.FromArgb(248, 255, 250, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(229, 207, 230)), BorderThickness = new(1), CornerRadius = new(17), Padding = new(17, 14, 17, 14), Width = 320, MaxHeight = 215, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed };
         canvas.Children.Add(departing); canvas.Children.Add(character); canvas.Children.Add(preview);
@@ -256,7 +256,7 @@ internal sealed partial class CompanionWindow : Window
         var isQuota = controller.Bubble == BubbleKind.Quota;
         bubbleTitle.Visibility = bubbleText.Visibility = isQuota ? Visibility.Collapsed : Visibility.Visible;
         quotaPanel.Visibility = isQuota ? Visibility.Visible : Visibility.Collapsed;
-        var width = isQuota ? QuotaPanel.BubbleWidth(settings.Language) : 320;
+        var width = QuotaPanel.BubbleWidth;
         if (bubble.Width != width) { bubble.Width = width; measuredBubble = null; }
         var content = (bubbleTitle.Text, bubbleText.Text);
         if (content == measuredBubble) return;
