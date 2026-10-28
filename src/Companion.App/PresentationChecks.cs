@@ -236,7 +236,7 @@ internal sealed partial class CompanionWindow
             var snapshot = new QuotaSnapshot(QuotaStatus.Live, percent is {} p ? new(p, 300, DateTimeOffset.Now.AddMinutes(97)) : null,
                 percent is {} w ? new(w, 10080, DateTimeOffset.Now.AddDays(6).AddHours(17)) : null, DateTimeOffset.Now);
             panel.Update(snapshot, theme);
-            var width = (language == "en" ? 500 : 450) - 36;
+            var width = QuotaPanel.BubbleWidth(language) - 36;
             panel.Measure(new Size(width, double.PositiveInfinity)); panel.Arrange(new Rect(0, 0, width, panel.DesiredSize.Height)); panel.UpdateLayout();
             foreach (var row in new[] { panel.FiveHour, panel.Weekly })
             {
@@ -255,9 +255,10 @@ internal sealed partial class CompanionWindow
             }
             if (previewPath is not null && language == "zh-CN" && percent == 67 && colors.Item2 == "#00A9D6")
             {
-                var surface = new Border { Child = panel, Width = 450, Padding = new(17, 14, 17, 14), Background = new SolidColorBrush(Color.FromRgb(255, 250, 255)), CornerRadius = new(17) };
-                surface.Measure(new Size(450, double.PositiveInfinity)); surface.Arrange(new Rect(0, 0, 450, surface.DesiredSize.Height)); surface.UpdateLayout();
-                var image = new RenderTargetBitmap(450, (int)Math.Ceiling(surface.ActualHeight), 96, 96, PixelFormats.Pbgra32); image.Render(surface);
+                var surfaceWidth = QuotaPanel.BubbleWidth(language);
+                var surface = new Border { Child = panel, Width = surfaceWidth, Padding = new(17, 14, 17, 14), Background = new SolidColorBrush(Color.FromRgb(255, 250, 255)), CornerRadius = new(17) };
+                surface.Measure(new Size(surfaceWidth, double.PositiveInfinity)); surface.Arrange(new Rect(0, 0, surfaceWidth, surface.DesiredSize.Height)); surface.UpdateLayout();
+                var image = new RenderTargetBitmap((int)Math.Ceiling(surfaceWidth), (int)Math.Ceiling(surface.ActualHeight), 96, 96, PixelFormats.Pbgra32); image.Render(surface);
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
                 using var output = File.Create(Path.ChangeExtension(previewPath, ".quota.png")); encoder.Save(output);
             }

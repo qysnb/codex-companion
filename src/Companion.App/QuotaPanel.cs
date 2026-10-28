@@ -8,19 +8,20 @@ namespace CodexCompanion.App;
 // Two reusable rows, no animated/indeterminate bars or per-refresh controls.
 internal sealed class QuotaPanel : StackPanel
 {
+    internal static double BubbleWidth(string language) => 36 + (language == "en" ? 464 : 414) * .6;
     internal sealed class Row : StackPanel
     {
-        internal readonly TextBlock[] Labels = Enumerable.Range(0, 4).Select(_ => new TextBlock { FontSize = 12, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }).ToArray();
-        internal readonly Grid Track = new() { Height = 4, Margin = new(0, 8, 0, 0), Background = Brushes.Transparent };
+        internal readonly TextBlock[] Labels = Enumerable.Range(0, 4).Select(_ => new TextBlock { FontSize = 10, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }).ToArray();
+        internal readonly Grid Track = new() { Height = 4, Margin = new(0, 6, 0, 0), Background = Brushes.Transparent };
         internal readonly Border Fill = new();
         readonly ColumnDefinition filled = new(), empty = new();
         internal Row()
         {
-            var line = new Grid { Margin = new(0, 0, 22, 0) };
+            var line = new Grid { Margin = new(0, 0, 14, 0) };
             for (var i = 0; i < 4; i++)
             {
-                line.ColumnDefinitions.Add(new() { Width = i is 1 or 3 ? GridLength.Auto : new GridLength(1, GridUnitType.Star) });
-                Labels[i].Margin = new(0, 0, i < 3 ? 12 : 0, 0);
+                line.ColumnDefinitions.Add(new() { Width = i == 2 ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+                Labels[i].Margin = new(0, 0, i < 3 ? 3 : 0, 0);
                 Grid.SetColumn(Labels[i], i); line.Children.Add(Labels[i]);
             }
             Track.ColumnDefinitions.Add(filled); Track.ColumnDefinitions.Add(empty);
@@ -40,8 +41,8 @@ internal sealed class QuotaPanel : StackPanel
             filled.Width = new(percent, GridUnitType.Star); empty.Width = new(100 - percent, GridUnitType.Star);
         }
     }
-    internal readonly Row FiveHour = new(), Weekly = new() { Margin = new(0, 19, 0, 0) };
-    internal readonly TextBlock Footer = new() { FontSize = 11, Margin = new(0, 14, 0, 0) };
+    internal readonly Row FiveHour = new(), Weekly = new() { Margin = new(0, 14, 0, 0) };
+    internal readonly TextBlock Footer = new() { FontSize = 10, Margin = new(0, 12, 0, 0), TextWrapping = TextWrapping.Wrap };
     string? textColor, barColor;
     SolidColorBrush foreground = Brushes.Black, accent = Brushes.Transparent;
     internal QuotaPanel() { Children.Add(FiveHour); Children.Add(Weekly); Children.Add(Footer); }
@@ -61,10 +62,10 @@ internal sealed class QuotaPanel : StackPanel
             var duration = left is { } time && time > TimeSpan.Zero
                 ? time.TotalDays >= 1 ? $"{(int)time.TotalDays}d{time.Hours}h" : $"{(int)time.TotalHours}h{time.Minutes}m"
                 : null;
-            row.Labels[2].Text = duration is not null ? duration + Text(" 后重置", " to reset", " 後にリセット")
-                : left.HasValue ? Text("等待重置", "Reset pending", "更新待ち") : Text("重置时间未知", "Reset unknown", "リセット不明");
+            row.Labels[2].Text = "· " + (duration is not null ? duration + Text("后重置", " to reset", "後にリセット")
+                : left.HasValue ? Text("等待重置", "Reset pending", "更新待ち") : Text("重置时间未知", "Reset unknown", "リセット不明"));
             row.Labels[3].Text = value is null ? Text("未知", "Unavailable", "不明")
-                : value.RemainingPercent.ToString("0.#", CultureInfo.CurrentCulture) + Text("% 剩余", "% left", "% 残り");
+                : value.RemainingPercent.ToString("0.#", CultureInfo.CurrentCulture) + Text("%剩余", "% left", "%残り");
             row.Set(value?.RemainingPercent, foreground, accent);
         }
         UpdateRow(FiveHour, Text("5小时限额", "5-hour limit", "5時間の利用枠"), snapshot.FiveHour);

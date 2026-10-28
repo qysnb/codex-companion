@@ -28,8 +28,8 @@ internal sealed class ThemeDialog : Window
         var barInput = Input(Text("进度条颜色", "Bar color", "バーの色"), BarColor);
         var hint = new TextBlock { Text = Text("输入十六进制颜色，如 #3D2F42。", "Enter a hex color, e.g. #3D2F42.", "#3D2F42 などの16進カラーを入力。"), TextWrapping = TextWrapping.Wrap };
         panel.Children.Add(hint);
-        var sample = new QuotaPanel { Margin = new(0, 0, 0, 0) };
-        panel.Children.Add(new Border { Child = sample, Background = new SolidColorBrush(Color.FromRgb(255, 250, 255)), Padding = new(14), Margin = new(0, 16, 0, 0), CornerRadius = new(10) });
+        var sample = new QuotaPanel();
+        panel.Children.Add(new Border { Child = sample, Width = QuotaPanel.BubbleWidth(settings.Language), HorizontalAlignment = HorizontalAlignment.Left, Background = new SolidColorBrush(Color.FromRgb(255, 250, 255)), Padding = new(17), Margin = new(0, 16, 0, 0), CornerRadius = new(10) });
         var snapshot = new QuotaSnapshot(QuotaStatus.Live, new(67, 300, DateTimeOffset.Now.AddMinutes(97)), new(85, 10080, DateTimeOffset.Now.AddDays(5)), DateTimeOffset.Now);
         void Preview()
         {

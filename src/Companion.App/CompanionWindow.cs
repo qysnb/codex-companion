@@ -256,7 +256,7 @@ internal sealed partial class CompanionWindow : Window
         var isQuota = controller.Bubble == BubbleKind.Quota;
         bubbleTitle.Visibility = bubbleText.Visibility = isQuota ? Visibility.Collapsed : Visibility.Visible;
         quotaPanel.Visibility = isQuota ? Visibility.Visible : Visibility.Collapsed;
-        var width = isQuota ? settings.Language == "en" ? 500 : 450 : 320;
+        var width = isQuota ? QuotaPanel.BubbleWidth(settings.Language) : 320;
         if (bubble.Width != width) { bubble.Width = width; measuredBubble = null; }
         var content = (bubbleTitle.Text, bubbleText.Text);
         if (content == measuredBubble) return;
