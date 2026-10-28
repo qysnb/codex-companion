@@ -27,6 +27,7 @@ internal sealed partial class CompanionWindow : Window
     readonly Popup bubblePopup;
     readonly TextBlock bubbleText = new() { TextWrapping = TextWrapping.Wrap, FontSize = 13, LineHeight = 20, Foreground = new SolidColorBrush(Color.FromRgb(61, 47, 66)) };
     readonly TextBlock bubbleTitle = new() { FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromRgb(116, 77, 116)), Margin = new(0, 0, 0, 7) };
+    readonly QuotaPanel quotaPanel = new() { Visibility = Visibility.Collapsed };
     readonly BubbleLifetime lifetime = new();
     readonly DispatcherTimer frame = new() { Interval = ResourcePolicy.TrackingInterval(false) };
     readonly DispatcherTimer motionFrame = new() { Interval = TimeSpan.FromMilliseconds(33) };
@@ -69,11 +70,14 @@ internal sealed partial class CompanionWindow : Window
         var canvas = new Grid(); Content = canvas;
         var motion = new TransformGroup(); motion.Children.Add(pokeScale); motion.Children.Add(pokeOffset); character.RenderTransform = departing.RenderTransform = motion;
         var stack = new StackPanel();
-        var heading = new DockPanel();
         var close = new Button { Content = "×", FontSize = 18, Width = 24, Height = 24, Padding = new(0), Background = Brushes.Transparent, BorderThickness = new(0), Focusable = false, ToolTip = "Close / 关闭 / 閉じる" };
-        close.Click += (_, _) => CloseBubble(); DockPanel.SetDock(close, Dock.Right);
-        heading.Children.Add(close); heading.Children.Add(bubbleTitle); stack.Children.Add(heading); stack.Children.Add(bubbleText);
-        bubble = new Border { Child = stack, Background = new SolidColorBrush(Color.FromArgb(248, 255, 250, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(229, 207, 230)), BorderThickness = new(1), CornerRadius = new(17), Padding = new(17, 14, 17, 14), Width = 320, MaxHeight = 215, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed };
+        close.Click += (_, _) => CloseBubble();
+        bubbleTitle.MinHeight = 24; bubbleTitle.Margin = new(0, 0, 24, 7);
+        stack.Children.Add(bubbleTitle); stack.Children.Add(bubbleText); stack.Children.Add(quotaPanel);
+        var bubbleContent = new Grid(); bubbleContent.Children.Add(stack);
+        close.HorizontalAlignment = HorizontalAlignment.Right; close.VerticalAlignment = VerticalAlignment.Top; close.Margin = new(0, -6, -9, 0);
+        bubbleContent.Children.Add(close);
+        bubble = new Border { Child = bubbleContent, Background = new SolidColorBrush(Color.FromArgb(248, 255, 250, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(229, 207, 230)), BorderThickness = new(1), CornerRadius = new(17), Padding = new(17, 14, 17, 14), Width = 320, MaxHeight = 215, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed };
         canvas.Children.Add(departing); canvas.Children.Add(character); canvas.Children.Add(preview);
         bubblePopup = new Popup { Child = bubble, PlacementTarget = character, Placement = PlacementMode.Top, AllowsTransparency = true, StaysOpen = true, Focusable = false, PopupAnimation = PopupAnimation.None };
         bubblePopup.Opened += (_, _) =>
@@ -249,6 +253,11 @@ internal sealed partial class CompanionWindow : Window
     }
     void MeasureBubble()
     {
+        var isQuota = controller.Bubble == BubbleKind.Quota;
+        bubbleTitle.Visibility = bubbleText.Visibility = isQuota ? Visibility.Collapsed : Visibility.Visible;
+        quotaPanel.Visibility = isQuota ? Visibility.Visible : Visibility.Collapsed;
+        var width = isQuota ? settings.Language == "en" ? 500 : 450 : 320;
+        if (bubble.Width != width) { bubble.Width = width; measuredBubble = null; }
         var content = (bubbleTitle.Text, bubbleText.Text);
         if (content == measuredBubble) return;
         // Discard the previous popup's height, including after auto-dismissal.
@@ -333,26 +342,10 @@ internal sealed partial class CompanionWindow : Window
     });
     void RenderQuota()
     {
-        var s = quota.Snapshot;
-        var hasData = s.FiveHour is not null || s.Weekly is not null;
-        // Refresh, reconnect and retry stay in the background. The original read
-        // timestamp still identifies the displayed data without status banners.
-        var text = !hasData && s.Status == QuotaStatus.NotLoggedIn
-            ? Local("请先在 Codex 登录 ChatGPT 账户。", "Sign in to a ChatGPT account in Codex.", "Codex で ChatGPT アカウントにログインしてください。")
-            : FormatWindow(Local("5 小时", "5 hours", "5 時間"), s.FiveHour) + "\n\n" + FormatWindow(Local("每周", "Weekly", "週間"), s.Weekly);
-        bubbleText.Text = text + (hasData && s.UpdatedAt is { } updated
-            ? "\n" + Local("读取于 ", "Read at ", "取得日時 ") + updated.ToLocalTime().ToString("MM-dd HH:mm:ss") : "");
-        bubbleTitle.Text = CharacterName(settings.Character) + " · " + Local("额度", "Quota", "利用枠");
+        // Keep status/reconnect work silent; this string is only the sizing cache key.
+        bubbleText.Text = quotaPanel.Update(quota.Snapshot, settings);
+        bubbleTitle.Text = "";
         UpdateWindowSize();
-    }
-    string FormatWindow(string name, QuotaWindow? value)
-    {
-        if (value is null) return name + Local("：未知", ": unavailable", "：不明");
-        var text = name + "  " + value.RemainingPercent.ToString("0.#", CultureInfo.CurrentCulture) + Local("% 剩余", "% remaining", "% 残り");
-        if (value.ResetsAt is not { } reset) return text + "\n" + Local("重置时间未知", "Reset time unavailable", "リセット日時は不明");
-        var left = reset - DateTimeOffset.Now;
-        var countdown = left <= TimeSpan.Zero ? Local("等待额度刷新", "Awaiting quota refresh", "利用枠を更新中") : left.TotalDays >= 1 ? $"{(int)left.TotalDays}d {left.Hours}h" : $"{(int)left.TotalHours}h {left.Minutes}m";
-        return text + "\n" + reset.ToLocalTime().ToString("MM-dd HH:mm") + " · " + countdown;
     }
     ContextMenu BuildMenu()
     {
@@ -369,6 +362,7 @@ internal sealed partial class CompanionWindow : Window
             size.Items.Add(Item(label + " · " + height, () => { ResetPoke(); settings = settings with { Size = value }; LoadArt(); Save(); }, settings.Size == value));
         }
         menu.Items.Add(language); menu.Items.Add(person); menu.Items.Add(size); menu.Items.Add(new Separator());
+        menu.Items.Add(Item(Local("主题…", "Theme…", "テーマ…"), ConfigureTheme));
         var refresh = new MenuItem { Header = Local("额度刷新间隔", "Quota refresh interval", "利用枠の更新間隔") };
         foreach (var seconds in new[] { 15, 30, 60, 120, 300 })
             refresh.Items.Add(Item(seconds + Local(" 秒", " seconds", " 秒"), () => SetRefreshInterval(seconds), settings.RefreshIntervalSeconds == seconds));
@@ -394,6 +388,18 @@ internal sealed partial class CompanionWindow : Window
     {
         settingsDialogOpen = true;
         try { var dialog = new RefreshIntervalDialog(this, settings.RefreshIntervalSeconds, settings.Language); if (dialog.ShowDialog() == true) SetRefreshInterval(dialog.Seconds); }
+        finally { settingsDialogOpen = false; }
+    }
+    void ConfigureTheme()
+    {
+        settingsDialogOpen = true;
+        try
+        {
+            var dialog = new ThemeDialog(this, settings);
+            if (dialog.ShowDialog() != true) return;
+            settings = settings with { QuotaTextColor = dialog.TextColor, QuotaBarColor = dialog.BarColor };
+            Save(); if (controller.Bubble == BubbleKind.Quota) RenderQuota();
+        }
         finally { settingsDialogOpen = false; }
     }
     void ToggleStartup()

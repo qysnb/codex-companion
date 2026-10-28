@@ -15,6 +15,9 @@ public sealed record CompanionSettings
     public bool Startup { get; init; }
     public bool QuotaResetNotifications { get; init; } = true;
     public int RefreshIntervalSeconds { get; init; } = 30;
+    public string QuotaTextColor { get; init; } = "#3D2F42";
+    public string QuotaBarColor { get; init; } = "#00A9D6";
+    public static bool IsThemeColor(string? value) => value is { Length: 7 } && value[0] == '#' && value.AsSpan(1).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
     [System.Text.Json.Serialization.JsonIgnore]
     public int Height => Sizes.FirstOrDefault(size => size.Id == Size, Sizes[1]).Height;
     public CompanionSettings Normalize() => this with
@@ -22,6 +25,8 @@ public sealed record CompanionSettings
         Character = Characters.Contains(Character) ? Character : "cute",
         Language = Languages.Contains(Language) ? Language : "zh-CN",
         Size = Sizes.Any(size => size.Id == Size) ? Size : "medium",
+        QuotaTextColor = IsThemeColor(QuotaTextColor) ? QuotaTextColor.ToUpperInvariant() : "#3D2F42",
+        QuotaBarColor = IsThemeColor(QuotaBarColor) ? QuotaBarColor.ToUpperInvariant() : "#00A9D6",
         RefreshIntervalSeconds = RefreshIntervalSeconds is >= 5 and <= 3600 ? RefreshIntervalSeconds : 30,
         OffsetX = double.IsFinite(OffsetX) && Math.Abs(OffsetX) <= 10000 ? OffsetX : 0,
         OffsetY = double.IsFinite(OffsetY) && Math.Abs(OffsetY) <= 10000 ? OffsetY : 0

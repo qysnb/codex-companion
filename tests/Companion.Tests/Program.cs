@@ -33,6 +33,23 @@ Check("settings roundtrip and corrupt file recovery", () => {
     try { var store=new SettingsStore(Path.Combine(dir,"settings.json")); store.Save(new() { Language="ja", Size="large" }); Assert(store.Load().Height==320 && store.Load().Language=="ja"); File.WriteAllText(store.Path,"{"); Assert(store.Load().Character=="cute"); }
     finally { Directory.Delete(dir,true); }
 });
+Check("theme rejects non-hex and transparent input and persists independent colors", () => {
+    foreach (var invalid in new string?[] { null, "Red", "#fff", "#00334455", "#GG3344", "<script>" })
+    {
+        Assert(!CompanionSettings.IsThemeColor(invalid));
+        var normalized = new CompanionSettings { QuotaTextColor = invalid!, QuotaBarColor = invalid! }.Normalize();
+        Assert(normalized.QuotaTextColor == "#3D2F42" && normalized.QuotaBarColor == "#00A9D6");
+    }
+    var dir = Path.Combine(Path.GetTempPath(), "companion-theme-" + Guid.NewGuid());
+    try
+    {
+        var store = new SettingsStore(Path.Combine(dir, "settings.json"));
+        store.Save(new() { QuotaTextColor = "#aabbcc", QuotaBarColor = "#001122", Character = "flash", RefreshIntervalSeconds = 60 });
+        var saved = store.Load();
+        Assert(saved.QuotaTextColor == "#AABBCC" && saved.QuotaBarColor == "#001122" && saved.Character == "flash" && saved.RefreshIntervalSeconds == 60);
+    }
+    finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+});
 Console.WriteLine($"{passed} interaction/settings tests passed.");
 SizeCharacterTests.Run();
 RuntimeTests.Run();

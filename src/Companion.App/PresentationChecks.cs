@@ -17,7 +17,7 @@ internal sealed partial class CompanionWindow
         try
         {
             measuredBubble = null; MeasureBubble();
-            var panel = new Grid { Width = Math.Max(330, settings.Height + 12), Height = settings.Height + bubble.DesiredSize.Height + 6 };
+            var panel = new Grid { Width = Math.Max(bubble.Width, settings.Height + 12), Height = settings.Height + bubble.DesiredSize.Height + 6 };
             Image Actor(Image layer) => new() { Source = layer.Source, Opacity = layer.Opacity, Height = settings.Height, Width = settings.Height, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, RenderTransformOrigin = layer.RenderTransformOrigin, RenderTransform = layer.RenderTransform.Clone() };
             panel.Children.Add(bubble); panel.Children.Add(Actor(departing)); panel.Children.Add(Actor(character));
             panel.Measure(new Size(panel.Width, panel.Height)); panel.Arrange(new Rect(0, 0, panel.Width, panel.Height)); panel.UpdateLayout();
@@ -220,7 +220,60 @@ internal sealed partial class CompanionWindow
         }
         CloseBubble(); SettleMotion(); Hide();
         var reminderScenarios = VerifyResetReminders();
-        return new { ok = true, source = synthetic ? "synthetic cached quota UI, not a network benchmark" : "prewarmed real quota cached UI", systemDpiScale = scale, interactions = 10, expressionFramesUsed = sources.Count, characterPositionUnchanged = true, bubbleGapsDip = gaps, cachedQuotaDisplayMilliseconds = timings, maximumMilliseconds = timings.Max(), autoDismissReopenScenarios = scenarios, staleHeightInjected = true, realTimerAndRepeatedClickRestore = true, interruptedTransitions = 32, exactCompositeContinuity = true, cacheBytes, peakArtBytes, fittedDisplayHeight = 300, sideBubbleVerified = true, cacheReleasedAndReloaded = true, reminderScenarios, previewPath };
+        var quotaThemeScenarios = VerifyQuotaThemes(previewPath);
+        return new { ok = true, source = synthetic ? "synthetic cached quota UI, not a network benchmark" : "prewarmed real quota cached UI", systemDpiScale = scale, interactions = 10, expressionFramesUsed = sources.Count, characterPositionUnchanged = true, bubbleGapsDip = gaps, cachedQuotaDisplayMilliseconds = timings, maximumMilliseconds = timings.Max(), autoDismissReopenScenarios = scenarios, staleHeightInjected = true, realTimerAndRepeatedClickRestore = true, interruptedTransitions = 32, exactCompositeContinuity = true, cacheBytes, peakArtBytes, fittedDisplayHeight = 300, sideBubbleVerified = true, cacheReleasedAndReloaded = true, reminderScenarios, quotaThemeScenarios, previewPath };
+    }
+
+    int VerifyQuotaThemes(string? previewPath)
+    {
+        var count = 0;
+        foreach (var language in CompanionSettings.Languages)
+        foreach (var percent in new double?[] { 0, 67, 100, null })
+        foreach (var colors in new[] { ("#3D2F42", "#00A9D6"), ("#513A63", "#9871C6") })
+        {
+            var panel = new QuotaPanel();
+            var theme = new CompanionSettings { Language = language, QuotaTextColor = colors.Item1, QuotaBarColor = colors.Item2 };
+            var snapshot = new QuotaSnapshot(QuotaStatus.Live, percent is {} p ? new(p, 300, DateTimeOffset.Now.AddMinutes(97)) : null,
+                percent is {} w ? new(w, 10080, DateTimeOffset.Now.AddDays(6).AddHours(17)) : null, DateTimeOffset.Now);
+            panel.Update(snapshot, theme);
+            var width = (language == "en" ? 500 : 450) - 36;
+            panel.Measure(new Size(width, double.PositiveInfinity)); panel.Arrange(new Rect(0, 0, width, panel.DesiredSize.Height)); panel.UpdateLayout();
+            foreach (var row in new[] { panel.FiveHour, panel.Weekly })
+            {
+                foreach (var label in row.Labels)
+                {
+                    var text = new FormattedText(label.Text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                        new Typeface(label.FontFamily, label.FontStyle, label.FontWeight, label.FontStretch), label.FontSize, label.Foreground, 1);
+                    if (text.Width > label.ActualWidth + 1) throw new InvalidOperationException($"Quota label clipped: {language}/{label.Text}/{text.Width:0.0}/{label.ActualWidth:0.0}");
+                }
+                var expected = row.Track.ActualWidth * (percent ?? 0) / 100;
+                if (Math.Abs(row.Fill.ActualWidth - expected) > 1 || row.Track.ActualHeight != 4)
+                    throw new InvalidOperationException("Quota bar does not represent the remaining percentage.");
+                if (((SolidColorBrush)row.Fill.Background).Color != (Color)ColorConverter.ConvertFromString(colors.Item2) ||
+                    ((SolidColorBrush)row.Labels[0].Foreground).Color != (Color)ColorConverter.ConvertFromString(colors.Item1))
+                    throw new InvalidOperationException("Custom quota colors were not applied.");
+            }
+            if (previewPath is not null && language == "zh-CN" && percent == 67 && colors.Item2 == "#00A9D6")
+            {
+                var surface = new Border { Child = panel, Width = 450, Padding = new(17, 14, 17, 14), Background = new SolidColorBrush(Color.FromRgb(255, 250, 255)), CornerRadius = new(17) };
+                surface.Measure(new Size(450, double.PositiveInfinity)); surface.Arrange(new Rect(0, 0, 450, surface.DesiredSize.Height)); surface.UpdateLayout();
+                var image = new RenderTargetBitmap(450, (int)Math.Ceiling(surface.ActualHeight), 96, 96, PixelFormats.Pbgra32); image.Render(surface);
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+                using var output = File.Create(Path.ChangeExtension(previewPath, ".quota.png")); encoder.Save(output);
+            }
+            count++;
+        }
+        foreach (var language in CompanionSettings.Languages)
+        {
+            var dialog = new ThemeDialog(this, new() { Language = language });
+            var content = (FrameworkElement)dialog.Content;
+            content.Measure(new Size(540, double.PositiveInfinity));
+            content.Arrange(new Rect(0, 0, 540, content.DesiredSize.Height)); content.UpdateLayout();
+            if (content.DesiredSize.Height > 600 || dialog.TextColor != "#3D2F42" || dialog.BarColor != "#00A9D6")
+                throw new InvalidOperationException("Theme dialog layout or defaults are invalid.");
+            dialog.Close();
+        }
+        return count;
     }
 
     static int VerifyResetReminders()
