@@ -48,7 +48,7 @@ internal sealed partial class CompanionWindow
     internal async Task<object> VerifyPresentationAsync(bool synthetic, string? previewPath = null)
     {
         validationMode = true; Topmost = false;
-        settings = settings with { BubbleDurationSeconds = -1 };
+        settings = settings with { BubbleDurationSeconds = 10 };
         // Use only our own off-screen windows. The caller labels quota data.
         Left = 11000; Top = 11000; Show(); UpdateLayout();
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
@@ -134,7 +134,7 @@ internal sealed partial class CompanionWindow
             NativeWindows.GetWindowRect(handle, out var after);
             if (after.Pixels != anchored.Pixels) throw new InvalidOperationException("Interaction moved the saved character anchor.");
             scenarios.Add(new { person, language, size, modelWidthDip = displayHeight, bubbleWidthDip = bubble.ActualWidth, contentScale = bubbleScale.ScaleX, quotaHeightDip = quotaHeight, greetingHeightDip = bubble.ActualHeight, paintedGapDip = paintedGap, unusedHeightDip = unusedHeight, threeStatesVerified = true });
-            lifetime.Advance(TimeSpan.FromSeconds(8), false);
+            lifetime.Advance(TimeSpan.FromSeconds(11), false);
             if (lifetime.IsOpen) throw new InvalidOperationException("Greeting bubble did not auto-expire.");
             CloseBubble(); SettleMotion(); AssertExpression(BubbleKind.None);
             if (previewPath is not null && language == "zh-CN" && size == "medium")
@@ -232,13 +232,14 @@ internal sealed partial class CompanionWindow
         var reminderScenarios = VerifyResetReminders();
         var quotaThemeScenarios = VerifyQuotaThemes(previewPath);
         var durationScenarios = VerifyBubbleDurations();
-        return new { ok = true, source = synthetic ? "synthetic cached quota UI, not a network benchmark" : "prewarmed real quota cached UI", systemDpiScale = scale, interactions = 10, expressionFramesUsed = sources.Count, characterPositionUnchanged = true, bubbleGapsDip = gaps, cachedQuotaDisplayMilliseconds = timings, maximumMilliseconds = timings.Max(), autoDismissReopenScenarios = scenarios, staleHeightInjected = true, realTimerAndRepeatedClickRestore = true, interruptedTransitions = 32, exactCompositeContinuity = true, cacheBytes, peakArtBytes, fittedDisplayHeight = 300, sideBubbleVerified = true, cacheReleasedAndReloaded = true, reminderScenarios, quotaThemeScenarios, durationScenarios, previewPath };
+        var timedExpiryMilliseconds = await VerifyTimedBubbleExpiryAsync();
+        return new { ok = true, source = synthetic ? "synthetic cached quota UI, not a network benchmark" : "prewarmed real quota cached UI", systemDpiScale = scale, interactions = 10, expressionFramesUsed = sources.Count, characterPositionUnchanged = true, bubbleGapsDip = gaps, cachedQuotaDisplayMilliseconds = timings, maximumMilliseconds = timings.Max(), autoDismissReopenScenarios = scenarios, staleHeightInjected = true, realTimerAndRepeatedClickRestore = true, interruptedTransitions = 32, exactCompositeContinuity = true, cacheBytes, peakArtBytes, fittedDisplayHeight = 300, sideBubbleVerified = true, cacheReleasedAndReloaded = true, reminderScenarios, quotaThemeScenarios, durationScenarios, timedExpiryMilliseconds, previewPath };
     }
 
     int VerifyBubbleDurations()
     {
         var saved = settings; var count = 0;
-        foreach (var seconds in new[] { -1, 1, 3, 5, 10, 0, 19 })
+        foreach (var seconds in new[] { 1, 3, 5, 10, 0, 19 })
         foreach (var kind in new[] { BubbleKind.Quota, BubbleKind.Greeting })
         {
             CloseBubble(); settings = saved with { BubbleDurationSeconds = seconds };
@@ -278,6 +279,46 @@ internal sealed partial class CompanionWindow
             dialog.Close();
         }
         settings = saved; return count;
+    }
+
+    async Task<List<double>> VerifyTimedBubbleExpiryAsync()
+    {
+        var saved = settings; var measurements = new List<double>();
+        Show(); UpdateLayout();
+        try
+        {
+            foreach (var kind in new[] { BubbleKind.Quota, BubbleKind.Greeting })
+            {
+                CloseBubble(); settings = saved with { BubbleDurationSeconds = 5 };
+                Interact(false); if (controller.Bubble != kind) Interact(false);
+                SettleMotion(); bubblePopup.IsOpen = true;
+                await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+                PositionBubble();
+                if (bubble.IsMouseOver) throw new InvalidOperationException("Off-screen test bubble unexpectedly hovered.");
+                var done = new TaskCompletionSource<double>(TaskCreationOptions.RunContinuationsAsynchronously);
+                var clock = Stopwatch.StartNew(); var previous = TimeSpan.Zero;
+                var timer = new DispatcherTimer { Interval = ResourcePolicy.TrackingInterval(true) };
+                timer.Tick += (_, _) =>
+                {
+                    var now = clock.Elapsed; var delta = now - previous; previous = now;
+                    // Same expiry path as the production tracking timer, using
+                    // real elapsed time and only this app's off-screen popup.
+                    AdvanceBubbleLifetime(delta, bubble.IsMouseOver);
+                    if (!lifetime.IsOpen && !bubblePopup.IsOpen && bubble.Visibility == Visibility.Collapsed)
+                        done.TrySetResult(clock.Elapsed.TotalMilliseconds);
+                };
+                timer.Start();
+                try
+                {
+                    var actual = await done.Task.WaitAsync(TimeSpan.FromSeconds(8));
+                    if (actual < 4900 || actual > 6500) throw new InvalidOperationException($"5s {kind} popup expiry was {actual:0}ms.");
+                    measurements.Add(actual);
+                }
+                finally { timer.Stop(); CloseBubble(); SettleMotion(); }
+            }
+        }
+        finally { settings = saved; Hide(); }
+        return measurements;
     }
 
     int VerifyQuotaThemes(string? previewPath)

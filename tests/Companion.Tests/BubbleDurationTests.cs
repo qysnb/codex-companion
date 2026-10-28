@@ -5,10 +5,10 @@ public static class BubbleDurationTests
     public static void Run()
     {
         var defaults = new CompanionSettings();
-        Require(defaults.BubbleDurationSeconds == -1 &&
-            defaults.GetBubbleDuration(BubbleKind.Quota) == TimeSpan.FromSeconds(12) &&
-            defaults.GetBubbleDuration(BubbleKind.Greeting) == TimeSpan.FromSeconds(7),
-            "Existing quota/greeting defaults must remain 12/7 seconds.");
+        Require(defaults.BubbleDurationSeconds == 10 &&
+            defaults.GetBubbleDuration(BubbleKind.Quota) == TimeSpan.FromSeconds(10) &&
+            defaults.GetBubbleDuration(BubbleKind.Greeting) == TimeSpan.FromSeconds(10),
+            "Quota/greeting defaults must both be 10 seconds.");
 
         foreach (var seconds in new[] { 1, 3, 5, 10, 23, 86400 })
         {
@@ -22,9 +22,9 @@ public static class BubbleDurationTests
         Require(permanent.BubbleDurationSeconds == 0 &&
             permanent.GetBubbleDuration(BubbleKind.Quota) is null && permanent.GetBubbleDuration(BubbleKind.Greeting) is null,
             "Permanent mode must not create a finite timeout.");
-        foreach (var invalid in new[] { int.MinValue, -2, 86401, int.MaxValue })
-            Require(new CompanionSettings { BubbleDurationSeconds = invalid }.Normalize().BubbleDurationSeconds == -1,
-                "An invalid persisted duration must fall back to the original defaults.");
+        foreach (var invalid in new[] { int.MinValue, -2, -1, 86401, int.MaxValue })
+            Require(new CompanionSettings { BubbleDurationSeconds = invalid }.Normalize().BubbleDurationSeconds == 10,
+                "Legacy default and invalid persisted durations must fall back to 10 seconds.");
 
         var lifetime = new BubbleLifetime();
         lifetime.OpenPermanent();
@@ -61,7 +61,7 @@ public static class BubbleDurationTests
         try
         {
             var store = new SettingsStore(path);
-            foreach (var seconds in new[] { -1, 0, 1, 23, 86400 })
+            foreach (var seconds in new[] { 10, 0, 1, 23, 86400 })
             {
                 store.Save(new() { BubbleDurationSeconds = seconds, Character = "flash", Language = "ja", Size = "xlarge", RefreshIntervalSeconds = 60 });
                 var restored = store.Load();
@@ -71,10 +71,12 @@ public static class BubbleDurationTests
             }
             File.WriteAllText(path, "{\"Character\":\"flash\",\"Language\":\"en\"}");
             var legacy = store.Load();
-            Require(legacy.BubbleDurationSeconds == -1 && legacy.Character == "flash" && legacy.Language == "en",
-                "Older settings files without duration must retain the old defaults and preferences.");
+            Require(legacy.BubbleDurationSeconds == 10 && legacy.Character == "flash" && legacy.Language == "en",
+                "Older settings files without duration must use 10 seconds and retain other preferences.");
+            File.WriteAllText(path, "{\"BubbleDurationSeconds\":-1}");
+            Require(store.Load().BubbleDurationSeconds == 10, "The removed default option must migrate to 10 seconds.");
             File.WriteAllText(path, "{\"BubbleDurationSeconds\":86401}");
-            Require(store.Load().BubbleDurationSeconds == -1, "Loading out-of-range duration must recover safely.");
+            Require(store.Load().BubbleDurationSeconds == 10, "Loading out-of-range duration must recover safely.");
         }
         finally
         {

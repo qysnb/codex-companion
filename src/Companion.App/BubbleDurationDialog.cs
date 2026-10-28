@@ -9,7 +9,7 @@ internal sealed class BubbleDurationDialog : Window
     internal BubbleDurationDialog(Window owner, int seconds, string language)
     {
         string Text(string zh, string en, string ja) => language switch { "en" => en, "ja" => ja, _ => zh };
-        Owner = owner; Seconds = seconds > 0 ? seconds : 7;
+        Owner = owner; Seconds = seconds > 0 ? seconds : 10;
         Title = Text("页面持续时间", "Bubble duration", "吹き出しの表示時間");
         Width = 400; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterScreen; ShowInTaskbar = false;

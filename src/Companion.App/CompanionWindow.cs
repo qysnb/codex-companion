@@ -223,8 +223,7 @@ internal sealed partial class CompanionWindow : Window
             if (rect != lastPlacement)
             { NativeWindows.SetWindowPos(handle, new nint(-1), (int)Math.Round(rect.X), (int)Math.Round(rect.Y), (int)Math.Round(rect.Width), (int)Math.Round(rect.Height), 0x10 | 0x40); lastPlacement = rect; }
         }
-        lifetime.Advance(delta, IsMouseOver || bubble.IsMouseOver || ContextMenu?.IsOpen == true || settingsDialogOpen);
-        if (!lifetime.IsOpen && bubble.Visibility == Visibility.Visible) CloseBubble();
+        AdvanceBubbleLifetime(delta, bubble.IsMouseOver);
         if (lifetime.IsOpen && bubble.Visibility == Visibility.Visible)
         { if (!bubblePopup.IsOpen) bubblePopup.IsOpen = true; PositionBubble(); }
         if (bubble.Visibility == Visibility.Visible && controller.Bubble == BubbleKind.Quota && (long)now.TotalSeconds != lastQuotaSecond)
@@ -235,6 +234,13 @@ internal sealed partial class CompanionWindow : Window
         var size = displayHeight + 12;
         if (Width != size || Height != size) { Width = Height = size; lastPlacement = null; }
         PositionBubble();
+    }
+    void AdvanceBubbleLifetime(TimeSpan delta, bool bubbleHovered)
+    {
+        // Clicking leaves the pointer on the character. Only hovering the bubble
+        // itself pauses reading time; character hover must not keep it open.
+        lifetime.Advance(delta, bubbleHovered || ContextMenu?.IsOpen == true || settingsDialogOpen);
+        if (!lifetime.IsOpen && bubble.Visibility == Visibility.Visible) CloseBubble();
     }
     void PositionBubble()
     {
@@ -386,7 +392,6 @@ internal sealed partial class CompanionWindow : Window
         menu.Items.Add(language); menu.Items.Add(person); menu.Items.Add(size); menu.Items.Add(new Separator());
         menu.Items.Add(Item(Local("主题…", "Theme…", "テーマ…"), ConfigureTheme));
         var duration = new MenuItem { Header = Local("页面持续时间", "Bubble duration", "吹き出しの表示時間") };
-        duration.Items.Add(Item(Local("默认（额度 12s / 问候 7s）", "Default (quota 12s / greetings 7s)", "標準（利用枠12秒 / 挨拶7秒）"), () => SetBubbleDuration(-1), settings.BubbleDurationSeconds == -1));
         foreach (var seconds in new[] { 1, 3, 5, 10 })
             duration.Items.Add(Item(seconds + "s", () => SetBubbleDuration(seconds), settings.BubbleDurationSeconds == seconds));
         duration.Items.Add(Item(Local("永久", "Always open", "常に表示"), () => SetBubbleDuration(0), settings.BubbleDurationSeconds == 0));
