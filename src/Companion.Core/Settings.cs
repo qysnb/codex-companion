@@ -15,6 +15,10 @@ public sealed record CompanionSettings
     public bool Startup { get; init; }
     public bool QuotaResetNotifications { get; init; } = true;
     public int RefreshIntervalSeconds { get; init; } = 30;
+    // -1 preserves the original per-kind defaults; 0 stays open until dismissed.
+    public int BubbleDurationSeconds { get; init; } = -1;
+    public TimeSpan? GetBubbleDuration(BubbleKind kind) => BubbleDurationSeconds == 0 ? null
+        : TimeSpan.FromSeconds(BubbleDurationSeconds == -1 ? kind == BubbleKind.Quota ? 12 : 7 : BubbleDurationSeconds);
     public string QuotaTextColor { get; init; } = "#3D2F42";
     public string QuotaBarColor { get; init; } = "#00A9D6";
     public static bool IsThemeColor(string? value) => value is { Length: 7 } && value[0] == '#' && value.AsSpan(1).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
@@ -28,6 +32,7 @@ public sealed record CompanionSettings
         QuotaTextColor = IsThemeColor(QuotaTextColor) ? QuotaTextColor.ToUpperInvariant() : "#3D2F42",
         QuotaBarColor = IsThemeColor(QuotaBarColor) ? QuotaBarColor.ToUpperInvariant() : "#00A9D6",
         RefreshIntervalSeconds = RefreshIntervalSeconds is >= 5 and <= 3600 ? RefreshIntervalSeconds : 30,
+        BubbleDurationSeconds = BubbleDurationSeconds is >= -1 and <= 86400 ? BubbleDurationSeconds : -1,
         OffsetX = double.IsFinite(OffsetX) && Math.Abs(OffsetX) <= 10000 ? OffsetX : 0,
         OffsetY = double.IsFinite(OffsetY) && Math.Abs(OffsetY) <= 10000 ? OffsetY : 0
     };

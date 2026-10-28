@@ -27,5 +27,6 @@ public static class RuntimeTests
         if (CompanionCommand.Validate("exit", null) is not null || CompanionCommand.Validate("exit", "anything") is null)
             throw new Exception("Exit is a fixed command without additional arguments.");
         Console.WriteLine("PASS placement/DPI/clamping, hover lifetime, IPC validation");
+        BubbleDurationTests.Run();
     }
 }

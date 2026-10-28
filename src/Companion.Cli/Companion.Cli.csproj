@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework>
-    <AssemblyName>CodexCompanion.Cli</AssemblyName><Version>0.4.8</Version>
+    <AssemblyName>CodexCompanion.Cli</AssemblyName><Version>0.4.9</Version>
     <TargetPlatformMoniker>Windows,Version=7.0</TargetPlatformMoniker><TargetPlatformDisplayName>Windows</TargetPlatformDisplayName>
     <DebugType>none</DebugType><ServerGarbageCollection>false</ServerGarbageCollection>
   </PropertyGroup>

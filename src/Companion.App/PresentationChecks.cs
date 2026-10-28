@@ -48,6 +48,7 @@ internal sealed partial class CompanionWindow
     internal async Task<object> VerifyPresentationAsync(bool synthetic, string? previewPath = null)
     {
         validationMode = true; Topmost = false;
+        settings = settings with { BubbleDurationSeconds = -1 };
         // Use only our own off-screen windows. The caller labels quota data.
         Left = 11000; Top = 11000; Show(); UpdateLayout();
         var scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
@@ -230,7 +231,53 @@ internal sealed partial class CompanionWindow
         CloseBubble(); SettleMotion(); Hide();
         var reminderScenarios = VerifyResetReminders();
         var quotaThemeScenarios = VerifyQuotaThemes(previewPath);
-        return new { ok = true, source = synthetic ? "synthetic cached quota UI, not a network benchmark" : "prewarmed real quota cached UI", systemDpiScale = scale, interactions = 10, expressionFramesUsed = sources.Count, characterPositionUnchanged = true, bubbleGapsDip = gaps, cachedQuotaDisplayMilliseconds = timings, maximumMilliseconds = timings.Max(), autoDismissReopenScenarios = scenarios, staleHeightInjected = true, realTimerAndRepeatedClickRestore = true, interruptedTransitions = 32, exactCompositeContinuity = true, cacheBytes, peakArtBytes, fittedDisplayHeight = 300, sideBubbleVerified = true, cacheReleasedAndReloaded = true, reminderScenarios, quotaThemeScenarios, previewPath };
+        var durationScenarios = VerifyBubbleDurations();
+        return new { ok = true, source = synthetic ? "synthetic cached quota UI, not a network benchmark" : "prewarmed real quota cached UI", systemDpiScale = scale, interactions = 10, expressionFramesUsed = sources.Count, characterPositionUnchanged = true, bubbleGapsDip = gaps, cachedQuotaDisplayMilliseconds = timings, maximumMilliseconds = timings.Max(), autoDismissReopenScenarios = scenarios, staleHeightInjected = true, realTimerAndRepeatedClickRestore = true, interruptedTransitions = 32, exactCompositeContinuity = true, cacheBytes, peakArtBytes, fittedDisplayHeight = 300, sideBubbleVerified = true, cacheReleasedAndReloaded = true, reminderScenarios, quotaThemeScenarios, durationScenarios, previewPath };
+    }
+
+    int VerifyBubbleDurations()
+    {
+        var saved = settings; var count = 0;
+        foreach (var seconds in new[] { -1, 1, 3, 5, 10, 0, 19 })
+        foreach (var kind in new[] { BubbleKind.Quota, BubbleKind.Greeting })
+        {
+            CloseBubble(); settings = saved with { BubbleDurationSeconds = seconds };
+            Interact(false); if (controller.Bubble != kind) Interact(false);
+            var version = controller.Version;
+            if (seconds == 0)
+            {
+                lifetime.Advance(TimeSpan.FromDays(365), false);
+                if (!lifetime.IsOpen || !lifetime.IsPermanent) throw new InvalidOperationException("Permanent bubble expired.");
+                // Changing the duration of an open bubble restarts its lifetime
+                // without consuming a click or changing the selected page.
+                settings = settings with { BubbleDurationSeconds = 3 }; OpenInteractionLifetime();
+                if (lifetime.IsPermanent || lifetime.Remaining != TimeSpan.FromSeconds(3) || controller.Version != version)
+                    throw new InvalidOperationException("Changing permanent to finite duration changed the interaction state.");
+            }
+            else
+            {
+                var expected = settings.GetBubbleDuration(kind)!.Value;
+                lifetime.Advance(TimeSpan.FromDays(1), true);
+                if (lifetime.Remaining != expected) throw new InvalidOperationException("Hover did not pause the configured duration.");
+                lifetime.Advance(expected - TimeSpan.FromMilliseconds(1), false);
+                if (!lifetime.IsOpen) throw new InvalidOperationException("Bubble expired before the selected duration.");
+                lifetime.Advance(TimeSpan.FromMilliseconds(2), false);
+                if (lifetime.IsOpen) throw new InvalidOperationException("Configured bubble duration did not expire.");
+            }
+            CloseBubble(); SettleMotion();
+            if (lifetime.IsOpen || lifetime.IsPermanent) throw new InvalidOperationException("Close did not dismiss the bubble lifetime.");
+            count++;
+        }
+        foreach (var language in CompanionSettings.Languages)
+        {
+            var dialog = new BubbleDurationDialog(this, 19, language);
+            var content = (FrameworkElement)dialog.Content;
+            content.Measure(new Size(400, double.PositiveInfinity));
+            content.Arrange(new Rect(0, 0, 400, content.DesiredSize.Height)); content.UpdateLayout();
+            if (content.DesiredSize.Height > 400 || dialog.Seconds != 19) throw new InvalidOperationException("Custom duration dialog layout is invalid.");
+            dialog.Close();
+        }
+        settings = saved; return count;
     }
 
     int VerifyQuotaThemes(string? previewPath)

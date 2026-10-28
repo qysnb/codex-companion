@@ -223,7 +223,7 @@ internal sealed partial class CompanionWindow : Window
             if (rect != lastPlacement)
             { NativeWindows.SetWindowPos(handle, new nint(-1), (int)Math.Round(rect.X), (int)Math.Round(rect.Y), (int)Math.Round(rect.Width), (int)Math.Round(rect.Height), 0x10 | 0x40); lastPlacement = rect; }
         }
-        lifetime.Advance(delta, IsMouseOver || bubble.IsMouseOver || ContextMenu?.IsOpen == true);
+        lifetime.Advance(delta, IsMouseOver || bubble.IsMouseOver || ContextMenu?.IsOpen == true || settingsDialogOpen);
         if (!lifetime.IsOpen && bubble.Visibility == Visibility.Visible) CloseBubble();
         if (lifetime.IsOpen && bubble.Visibility == Visibility.Visible)
         { if (!bubblePopup.IsOpen) bubblePopup.IsOpen = true; PositionBubble(); }
@@ -279,7 +279,7 @@ internal sealed partial class CompanionWindow : Window
         measuredBubble = content;
         bubble.UpdateLayout();
     }
-    void CloseBubble() { bubblePopup.IsOpen = false; lastBubblePlacement = null; measuredBubble = null; bubble.Visibility = Visibility.Collapsed; controller.CloseBubble(); SyncExpression(); }
+    void CloseBubble() { bubblePopup.IsOpen = false; lastBubblePlacement = null; measuredBubble = null; bubble.Visibility = Visibility.Collapsed; lifetime.Close(); controller.CloseBubble(); SyncExpression(); }
     void Press(object sender, MouseButtonEventArgs e)
     {
         if (!NativeWindows.GetCursorPos(out var p)) return;
@@ -309,9 +309,9 @@ internal sealed partial class CompanionWindow : Window
         if (kind == BubbleKind.Greeting)
         {
             var line = greetings.TryGetValue(settings.Character + "/" + settings.Language, out var bag) ? bag.Next() : Local("我在这里陪你。", "I’m right here with you.", "ここで一緒にいるよ。");
-            ShowMessage(CharacterName(settings.Character), line, 7); return;
+            ShowInteractionMessage(CharacterName(settings.Character), line); return;
         }
-        ShowMessage(CharacterName(settings.Character), "", 12);
+        ShowInteractionMessage(CharacterName(settings.Character), "");
         RenderQuota();
         lastQuotaDisplayMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         if (refresh) _ = quota.RefreshAsync();
@@ -337,6 +337,16 @@ internal sealed partial class CompanionWindow : Window
     }
     void ShowMessage(string title, string text, int seconds)
     { bubbleTitle.Text = title; bubbleText.Text = text; bubble.Visibility = Visibility.Visible; lifetime.Open(TimeSpan.FromSeconds(seconds)); SyncExpression(); UpdateWindowSize(); lastTick = elapsed.Elapsed; Tick(null, EventArgs.Empty); }
+    void OpenInteractionLifetime()
+    {
+        if (settings.GetBubbleDuration(controller.Bubble) is { } duration) lifetime.Open(duration);
+        else lifetime.OpenPermanent();
+    }
+    void ShowInteractionMessage(string title, string text)
+    {
+        bubbleTitle.Text = title; bubbleText.Text = text; bubble.Visibility = Visibility.Visible;
+        OpenInteractionLifetime(); SyncExpression(); UpdateWindowSize(); lastTick = elapsed.Elapsed; Tick(null, EventArgs.Empty);
+    }
     string Local(string zh, string en, string ja) => settings.Language switch { "en" => en, "ja" => ja, _ => zh };
     string CharacterName(string value) => CharacterNames.Get(value);
     void OnQuotaReset(QuotaResetNotice notice) => Dispatcher.BeginInvoke(() =>
@@ -375,6 +385,15 @@ internal sealed partial class CompanionWindow : Window
         }
         menu.Items.Add(language); menu.Items.Add(person); menu.Items.Add(size); menu.Items.Add(new Separator());
         menu.Items.Add(Item(Local("主题…", "Theme…", "テーマ…"), ConfigureTheme));
+        var duration = new MenuItem { Header = Local("页面持续时间", "Bubble duration", "吹き出しの表示時間") };
+        duration.Items.Add(Item(Local("默认（额度 12s / 问候 7s）", "Default (quota 12s / greetings 7s)", "標準（利用枠12秒 / 挨拶7秒）"), () => SetBubbleDuration(-1), settings.BubbleDurationSeconds == -1));
+        foreach (var seconds in new[] { 1, 3, 5, 10 })
+            duration.Items.Add(Item(seconds + "s", () => SetBubbleDuration(seconds), settings.BubbleDurationSeconds == seconds));
+        duration.Items.Add(Item(Local("永久", "Always open", "常に表示"), () => SetBubbleDuration(0), settings.BubbleDurationSeconds == 0));
+        duration.Items.Add(new Separator());
+        var customDuration = settings.BubbleDurationSeconds > 0 && settings.BubbleDurationSeconds is not (1 or 3 or 5 or 10);
+        duration.Items.Add(Item(Local("自定义…", "Custom…", "カスタム…") + (customDuration ? $" ({settings.BubbleDurationSeconds}s)" : ""), ConfigureBubbleDuration, customDuration));
+        menu.Items.Add(duration);
         var refresh = new MenuItem { Header = Local("额度刷新间隔", "Quota refresh interval", "利用枠の更新間隔") };
         foreach (var seconds in new[] { 15, 30, 60, 120, 300 })
             refresh.Items.Add(Item(seconds + Local(" 秒", " seconds", " 秒"), () => SetRefreshInterval(seconds), settings.RefreshIntervalSeconds == seconds));
@@ -401,6 +420,22 @@ internal sealed partial class CompanionWindow : Window
         settingsDialogOpen = true;
         try { var dialog = new RefreshIntervalDialog(this, settings.RefreshIntervalSeconds, settings.Language); if (dialog.ShowDialog() == true) SetRefreshInterval(dialog.Seconds); }
         finally { settingsDialogOpen = false; }
+    }
+    void SetBubbleDuration(int seconds)
+    {
+        settings = (settings with { BubbleDurationSeconds = seconds }).Normalize(); Save();
+        if (lifetime.IsOpen && controller.Bubble is BubbleKind.Quota or BubbleKind.Greeting) OpenInteractionLifetime();
+        lastTick = elapsed.Elapsed;
+    }
+    void ConfigureBubbleDuration()
+    {
+        settingsDialogOpen = true;
+        try
+        {
+            var dialog = new BubbleDurationDialog(this, settings.BubbleDurationSeconds, settings.Language);
+            if (dialog.ShowDialog() == true) SetBubbleDuration(dialog.Seconds);
+        }
+        finally { settingsDialogOpen = false; lastTick = elapsed.Elapsed; }
     }
     void ConfigureTheme()
     {
@@ -462,6 +497,6 @@ internal sealed partial class CompanionWindow : Window
             case "refresh-quota": _ = quota.RefreshAsync(true); break;
         }
         using var process = Process.GetCurrentProcess();
-        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
+        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
     }
 }

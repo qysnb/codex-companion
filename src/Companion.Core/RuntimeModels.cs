@@ -16,9 +16,12 @@ public static class CompanionPlacement
 public sealed class BubbleLifetime
 {
     public TimeSpan Remaining { get; private set; }
+    public bool IsPermanent { get; private set; }
     public bool IsOpen => Remaining > TimeSpan.Zero;
-    public void Open(TimeSpan duration) => Remaining = duration;
-    public void Advance(TimeSpan elapsed, bool hovering) { if (!hovering && elapsed > TimeSpan.Zero) Remaining = Remaining > elapsed ? Remaining - elapsed : TimeSpan.Zero; }
+    public void Open(TimeSpan duration) { IsPermanent = false; Remaining = duration; }
+    public void OpenPermanent() { IsPermanent = true; Remaining = TimeSpan.MaxValue; }
+    public void Close() { IsPermanent = false; Remaining = TimeSpan.Zero; }
+    public void Advance(TimeSpan elapsed, bool hovering) { if (!IsPermanent && !hovering && elapsed > TimeSpan.Zero) Remaining = Remaining > elapsed ? Remaining - elapsed : TimeSpan.Zero; }
 }
 public static class CompanionCommand
 {
