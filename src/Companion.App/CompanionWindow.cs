@@ -28,6 +28,7 @@ internal sealed partial class CompanionWindow : Window
     readonly TextBlock bubbleText = new() { TextWrapping = TextWrapping.Wrap, FontSize = 13, LineHeight = 20, Foreground = new SolidColorBrush(Color.FromRgb(61, 47, 66)) };
     readonly TextBlock bubbleTitle = new() { FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Color.FromRgb(116, 77, 116)), Margin = new(0, 0, 0, 7) };
     readonly QuotaPanel quotaPanel = new() { Visibility = Visibility.Collapsed };
+    readonly ScaleTransform bubbleScale = new(1, 1);
     readonly BubbleLifetime lifetime = new();
     readonly DispatcherTimer frame = new() { Interval = ResourcePolicy.TrackingInterval(false) };
     readonly DispatcherTimer motionFrame = new() { Interval = TimeSpan.FromMilliseconds(33) };
@@ -74,7 +75,7 @@ internal sealed partial class CompanionWindow : Window
         close.Click += (_, _) => CloseBubble();
         bubbleTitle.MinHeight = 24; bubbleTitle.Margin = new(0, 0, 24, 7);
         stack.Children.Add(bubbleTitle); stack.Children.Add(bubbleText); stack.Children.Add(quotaPanel);
-        var bubbleContent = new Grid(); bubbleContent.Children.Add(stack);
+        var bubbleContent = new Grid { LayoutTransform = bubbleScale }; bubbleContent.Children.Add(stack);
         close.HorizontalAlignment = HorizontalAlignment.Right; close.VerticalAlignment = VerticalAlignment.Top; close.Margin = new(0, -6, -15, 0);
         bubbleContent.Children.Add(close);
         bubble = new Border { Child = bubbleContent, Background = new SolidColorBrush(Color.FromArgb(248, 255, 250, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(229, 207, 230)), BorderThickness = new(1), CornerRadius = new(17), Padding = new(17, 14, 17, 14), Width = 320, MaxHeight = 215, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Top, Visibility = Visibility.Collapsed };
@@ -256,8 +257,19 @@ internal sealed partial class CompanionWindow : Window
         var isQuota = controller.Bubble == BubbleKind.Quota;
         bubbleTitle.Visibility = bubbleText.Visibility = isQuota ? Visibility.Collapsed : Visibility.Visible;
         quotaPanel.Visibility = isQuota ? Visibility.Visible : Visibility.Collapsed;
-        var width = QuotaPanel.BubbleWidth;
-        if (bubble.Width != width) { bubble.Width = width; measuredBubble = null; }
+        // Match the stable model layout width, never expression alpha bounds or
+        // the poke transform. Small/medium retain their existing bubble size.
+        var width = settings.Size is "large" or "xlarge" ? displayHeight : QuotaPanel.BubbleWidth;
+        var scale = width / QuotaPanel.BubbleWidth;
+        if (bubble.Width != width || bubbleScale.ScaleX != scale)
+        {
+            bubble.Width = width;
+            bubbleScale.ScaleX = bubbleScale.ScaleY = scale;
+            bubble.Padding = new(17 * scale, 14 * scale, 17 * scale, 14 * scale);
+            bubble.CornerRadius = new(17 * scale); bubble.BorderThickness = new(scale);
+            bubble.MaxHeight = 215 * scale;
+            measuredBubble = null;
+        }
         var content = (bubbleTitle.Text, bubbleText.Text);
         if (content == measuredBubble) return;
         // Discard the previous popup's height, including after auto-dismissal.

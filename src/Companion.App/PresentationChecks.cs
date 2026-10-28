@@ -93,6 +93,11 @@ internal sealed partial class CompanionWindow
             Interact(false); AssertExpression(BubbleKind.Quota); bubblePopup.IsOpen = true;
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); PositionBubble(); SettleMotion();
             var quotaHeight = bubble.ActualHeight;
+            var quotaWidth = bubble.ActualWidth;
+            var expectedWidth = size is "large" or "xlarge" ? displayHeight : QuotaPanel.BubbleWidth;
+            var expectedScale = expectedWidth / QuotaPanel.BubbleWidth;
+            if (Math.Abs(quotaWidth - expectedWidth) > .1 || Math.Abs(bubbleScale.ScaleX - expectedScale) > .001)
+                throw new InvalidOperationException("Quota bubble width or content scale does not match the size preset.");
             lifetime.Advance(TimeSpan.FromSeconds(13), false);
             if (lifetime.IsOpen) throw new InvalidOperationException("Quota bubble did not auto-expire.");
             CloseBubble(); SettleMotion(); AssertExpression(BubbleKind.None);
@@ -107,7 +112,9 @@ internal sealed partial class CompanionWindow
             var actorTop = PointToScreen(new Point(ActualWidth - character.ActualWidth, ActualHeight - character.ActualHeight)).Y;
             var paintedGap = (actorTop - bubble.PointToScreen(new Point(0, bubble.ActualHeight)).Y) / scale;
             var unusedHeight = (popupBounds.Bottom - popupBounds.Top) / scale - bubble.ActualHeight;
-            if (Math.Abs(paintedGap - 6) > 1 || Math.Abs(unusedHeight) > 1 || bubble.ActualHeight >= quotaHeight || bubble.ActualHeight > 105)
+            if (Math.Abs(bubble.ActualWidth - quotaWidth) > .1 || Math.Abs(bubbleScale.ScaleY - expectedScale) > .001)
+                throw new InvalidOperationException("Greeting and quota bubble sizes use different scales.");
+            if (Math.Abs(paintedGap - 6) > 1 || Math.Abs(unusedHeight) > 1 || bubble.ActualHeight >= quotaHeight || bubble.ActualHeight > 105 * expectedScale)
                 throw new InvalidOperationException($"Greeting layout regression ({person}/{language}/{size}): gap={paintedGap:0.0}, unused={unusedHeight:0.0}, greeting={bubble.ActualHeight:0.0}, quota={quotaHeight:0.0} DIP.");
             foreach (var reduced in new[] { false, true })
             {
@@ -125,7 +132,7 @@ internal sealed partial class CompanionWindow
             }
             NativeWindows.GetWindowRect(handle, out var after);
             if (after.Pixels != anchored.Pixels) throw new InvalidOperationException("Interaction moved the saved character anchor.");
-            scenarios.Add(new { person, language, size, quotaHeightDip = quotaHeight, greetingHeightDip = bubble.ActualHeight, paintedGapDip = paintedGap, unusedHeightDip = unusedHeight, threeStatesVerified = true });
+            scenarios.Add(new { person, language, size, modelWidthDip = displayHeight, bubbleWidthDip = bubble.ActualWidth, contentScale = bubbleScale.ScaleX, quotaHeightDip = quotaHeight, greetingHeightDip = bubble.ActualHeight, paintedGapDip = paintedGap, unusedHeightDip = unusedHeight, threeStatesVerified = true });
             lifetime.Advance(TimeSpan.FromSeconds(8), false);
             if (lifetime.IsOpen) throw new InvalidOperationException("Greeting bubble did not auto-expire.");
             CloseBubble(); SettleMotion(); AssertExpression(BubbleKind.None);
@@ -196,6 +203,8 @@ internal sealed partial class CompanionWindow
             throw new InvalidOperationException("The actual oversized WPF character did not fit without changing the saved preset.");
         Interact(false); SettleMotion(); bubblePopup.IsOpen = true;
         await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); PositionBubble();
+        if (Math.Abs(bubble.ActualWidth - displayHeight) > .1 || Math.Abs(bubbleScale.ScaleX - displayHeight / QuotaPanel.BubbleWidth) > .001)
+            throw new InvalidOperationException("Bubble did not follow the model's fitted work-area width.");
         var sideSource = (HwndSource)PresentationSource.FromVisual(bubble);
         NativeWindows.GetWindowRect(sideSource.Handle, out var sidePopup);
         var actorOrigin = PointToScreen(new Point(ActualWidth - character.ActualWidth, ActualHeight - character.ActualHeight));
