@@ -240,22 +240,28 @@ internal sealed partial class CompanionWindow
             panel.Measure(new Size(width, double.PositiveInfinity)); panel.Arrange(new Rect(0, 0, width, panel.DesiredSize.Height)); panel.UpdateLayout();
             foreach (var row in new[] { panel.FiveHour, panel.Weekly })
             {
-                foreach (var label in row.Labels)
+                foreach (var label in row.Labels.Concat(new[] { row.Separator, row.ResetSuffix }))
                 {
                     var text = new FormattedText(label.Text, System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                         new Typeface(label.FontFamily, label.FontStyle, label.FontWeight, label.FontStretch), label.FontSize, label.Foreground, 1);
                     if (text.Width > label.ActualWidth + 1) throw new InvalidOperationException($"Quota label clipped: {language}/{label.Text}/{text.Width:0.0}/{label.ActualWidth:0.0}");
                 }
                 var bounds = row.Labels.Select(label => label.TransformToAncestor(row).TransformBounds(new Rect(0, 0, label.ActualWidth, label.ActualHeight))).ToArray();
-                if (Math.Abs((bounds[1].Left + bounds[2].Right) / 2 - width / 2) > 1 || Math.Abs(bounds[3].Right - (width - 14)) > 1 ||
-                    bounds[0].Right + 2 > bounds[1].Left || bounds[2].Right + 2 > bounds[3].Left)
-                    throw new InvalidOperationException($"Quota alignment or overlap: {language}/{percent}");
+                var reset = row.ResetGroup.TransformToAncestor(row).TransformBounds(new Rect(0, 0, row.ResetGroup.ActualWidth, row.ResetGroup.ActualHeight));
+                if (Math.Abs((reset.Left + reset.Right) / 2 - width / 2) > 1 || Math.Abs(bounds[3].Right - (width - 10)) > 1 ||
+                    bounds[0].Right + 2 > reset.Left || reset.Right + 2 > bounds[3].Left)
+                    throw new InvalidOperationException($"Quota alignment or overlap: {language}/{percent}; nameRight={bounds[0].Right:0.0}, reset={reset.Left:0.0}..{reset.Right:0.0}, percentLeft={bounds[3].Left:0.0}");
                 var expected = row.Track.ActualWidth * (percent ?? 0) / 100;
                 if (Math.Abs(row.Fill.ActualWidth - expected) > 1 || row.Track.ActualHeight != 4)
                     throw new InvalidOperationException("Quota bar does not represent the remaining percentage.");
                 if (((SolidColorBrush)row.Fill.Background).Color != (Color)ColorConverter.ConvertFromString(colors.Item2) ||
                     ((SolidColorBrush)row.Labels[0].Foreground).Color != (Color)ColorConverter.ConvertFromString(colors.Item1))
                     throw new InvalidOperationException("Custom quota colors were not applied.");
+            }
+            foreach (var pair in new[] { (panel.FiveHour.Labels[1], panel.Weekly.Labels[1]), (panel.FiveHour.Separator, panel.Weekly.Separator), (panel.FiveHour.ResetSuffix, panel.Weekly.ResetSuffix) })
+            {
+                if (Math.Abs(pair.Item1.TransformToAncestor(panel).Transform(new Point()).X - pair.Item2.TransformToAncestor(panel).Transform(new Point()).X) > .1)
+                    throw new InvalidOperationException("Reset time, separator and suffix columns are not aligned.");
             }
             if (previewPath is not null && language == "zh-CN" && percent == 67 && colors.Item2 == "#00A9D6")
             {
