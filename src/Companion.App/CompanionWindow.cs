@@ -19,6 +19,8 @@ internal sealed partial class CompanionWindow : Window
     CompanionSettings settings;
     readonly CompanionController controller = new();
     readonly QuotaService quota;
+    readonly bool useLocalEvents;
+    LocalQuotaMonitor? localQuotaMonitor;
     readonly Dictionary<string, ShuffleBag> greetings = new();
     readonly Image character = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, RenderTransformOrigin = new(1, 1) };
     readonly Image departing = new() { Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, RenderTransformOrigin = new(1, 1), IsHitTestVisible = false };
@@ -54,7 +56,7 @@ internal sealed partial class CompanionWindow : Window
     BitmapSource? pixelsSource;
     byte[]? pixels;
     PixelRect? lastBubblePlacement;
-    (string Title, string Text)? measuredBubble;
+    (BubbleKind Kind, string Title, string Text)? measuredBubble;
     double lastQuotaDisplayMs;
     bool validationMode;
     (nint Handle, PixelRect Rect, PixelRect Work, double Scale)? target;
@@ -62,10 +64,12 @@ internal sealed partial class CompanionWindow : Window
     public CompanionWindow(QuotaService? quotaService = null)
     {
         quota = quotaService ?? new();
+        useLocalEvents = quotaService is null;
         settings = store.Load(); controller.SetCharacter(settings.Character); controller.SetLanguage(settings.Language);
         displayHeight = settings.Height;
         quota.RefreshInterval = TimeSpan.FromSeconds(settings.RefreshIntervalSeconds);
         quota.NetworkMode = NetworkMode(settings.QuotaNetworkMode);
+        quota.LocalSyncEnabled = useLocalEvents && settings.LocalQuotaSync;
         Title = "Codex Companion"; Width = displayHeight + 12; Height = displayHeight + 12;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true; Focusable = false;
@@ -115,14 +119,35 @@ internal sealed partial class CompanionWindow : Window
     {
         new WindowInteropHelper(this).EnsureHandle();
         pipe = new CommandPipe(request => Dispatcher.InvokeAsync(() => ExecuteAsync(request)).Task.Unwrap());
-        frame.Start(); _ = quota.StartAsync(); Tick(null, EventArgs.Empty); return Task.CompletedTask;
+        frame.Start(); StartLocalQuotaSync(); _ = quota.StartAsync(); Tick(null, EventArgs.Empty); return Task.CompletedTask;
     }
     internal async Task StopAsync()
     {
         if (stopping) return; stopping = true; frame.Stop(); ResetPoke(); CompleteExpression(); bubblePopup.IsOpen = false;
         quota.ResetDetected -= OnQuotaReset; resetReminder?.Close(); resetReminder = null;
         if (pipe is not null) await pipe.DisposeAsync().ConfigureAwait(false);
+        if (localQuotaMonitor is not null) await localQuotaMonitor.DisposeAsync().ConfigureAwait(false);
         await quota.DisposeAsync().ConfigureAwait(false);
+    }
+    void StartLocalQuotaSync()
+    {
+        if (!useLocalEvents || !settings.LocalQuotaSync || localQuotaMonitor is not null || stopping) return;
+        var home = Environment.GetEnvironmentVariable("CODEX_HOME");
+        if (string.IsNullOrWhiteSpace(home)) home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+        localQuotaMonitor = new LocalQuotaMonitor(home);
+        quota.InvalidateLocalReading(localQuotaMonitor.Generation, false);
+        localQuotaMonitor.Reading += reading => quota.AcceptLocalReading(reading);
+        localQuotaMonitor.Invalidated += quota.InvalidateLocalReading;
+        _ = localQuotaMonitor.StartAsync();
+    }
+    async void ToggleLocalQuotaSync()
+    {
+        settings = settings with { LocalQuotaSync = !settings.LocalQuotaSync }; Save();
+        quota.LocalSyncEnabled = useLocalEvents && settings.LocalQuotaSync;
+        if (settings.LocalQuotaSync) StartLocalQuotaSync();
+        else if (localQuotaMonitor is { } previous)
+        { localQuotaMonitor = null; await previous.DisposeAsync(); }
+        if (controller.Bubble == BubbleKind.Quota) RenderQuota();
     }
     void Save() { try { store.Save(settings); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { ShowMessage(Local("无法保存设置", "Settings could not be saved", "設定を保存できません"), e.GetType().Name, 7); } }
     void LoadDialogue()
@@ -277,12 +302,18 @@ internal sealed partial class CompanionWindow : Window
             bubble.MaxHeight = 215 * scale;
             measuredBubble = null;
         }
-        var content = (bubbleTitle.Text, bubbleText.Text);
+        var content = (controller.Bubble, bubbleTitle.Text, bubbleText.Text);
         if (content == measuredBubble) return;
         // Discard the previous popup's height, including after auto-dismissal.
-        bubble.Height = double.NaN;
-        bubble.InvalidateMeasure(); bubble.Measure(new Size(bubble.Width, double.PositiveInfinity));
-        bubble.Height = Math.Ceiling(bubble.DesiredSize.Height);
+        // A reopened Popup can keep the Border's old DesiredSize after Height
+        // becomes Auto, even though its child has already shrunk. Measure the
+        // content directly and add only the current frame's padding/border.
+        var horizontalFrame = bubble.Padding.Left + bubble.Padding.Right + bubble.BorderThickness.Left + bubble.BorderThickness.Right;
+        var verticalFrame = bubble.Padding.Top + bubble.Padding.Bottom + bubble.BorderThickness.Top + bubble.BorderThickness.Bottom;
+        bubble.Child.InvalidateMeasure();
+        bubble.Child.Measure(new Size(Math.Max(0, bubble.Width - horizontalFrame), double.PositiveInfinity));
+        bubble.Height = Math.Min(bubble.MaxHeight, Math.Ceiling(bubble.Child.DesiredSize.Height + verticalFrame));
+        bubble.InvalidateMeasure(); bubble.Measure(new Size(bubble.Width, bubble.Height));
         measuredBubble = content;
         bubble.UpdateLayout();
     }
@@ -394,11 +425,12 @@ internal sealed partial class CompanionWindow : Window
         menu.Items.Add(Item(Local("主题…", "Theme…", "テーマ…"), ConfigureTheme));
         var network = new MenuItem { Header = Local("额度联网方式", "Quota network access", "利用枠の通信方式") };
         foreach (var (value, label) in new[] {
-            ("local", Local("本地缓存（仅手动联网）", "Local cache (manual network only)", "ローカルキャッシュ（手動通信のみ）")),
+            ("local", Local("本地同步（仅手动联网）", "Local sync (manual network only)", "ローカル同期（手動通信のみ）")),
             ("on-demand", Local("按需联网（至少缓存 15 分钟）", "On demand (cache at least 15 min)", "必要時のみ（15分以上キャッシュ）")),
             ("automatic", Local("自动联网（可能消耗较多流量）", "Automatic (higher data usage)", "自動通信（データ使用量が増加）")) })
             network.Items.Add(Item(label, () => SetQuotaNetworkMode(value), settings.QuotaNetworkMode == value));
         menu.Items.Add(network);
+        menu.Items.Add(Item(Local("监听本地额度事件", "Subscribe to local quota events", "ローカル利用枠イベントを監視"), ToggleLocalQuotaSync, settings.LocalQuotaSync));
         var duration = new MenuItem { Header = Local("页面持续时间", "Bubble duration", "吹き出しの表示時間") };
         foreach (var seconds in new[] { 1, 3, 5, 10 })
             duration.Items.Add(Item(seconds + "s", () => SetBubbleDuration(seconds), settings.BubbleDurationSeconds == seconds));
@@ -517,6 +549,6 @@ internal sealed partial class CompanionWindow : Window
             case "refresh-quota": _ = quota.RefreshAsync(true); break;
         }
         using var process = Process.GetCurrentProcess();
-        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
+        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, quotaSource = quota.Source, localQuotaSync = settings.LocalQuotaSync, localQuotaSubscription = localQuotaMonitor?.Stats, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
     }
 }

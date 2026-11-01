@@ -16,6 +16,7 @@ public sealed record CompanionSettings
     public bool QuotaResetNotifications { get; init; } = true;
     public int RefreshIntervalSeconds { get; init; } = 900;
     public string QuotaNetworkMode { get; init; } = "local";
+    public bool LocalQuotaSync { get; init; } = true;
     // 0 stays open until dismissed; legacy -1 normalizes to the new 10s default.
     public int BubbleDurationSeconds { get; init; } = 10;
     public TimeSpan? GetBubbleDuration(BubbleKind kind) => BubbleDurationSeconds == 0 ? null

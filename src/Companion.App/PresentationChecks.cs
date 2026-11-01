@@ -116,7 +116,7 @@ internal sealed partial class CompanionWindow
             if (Math.Abs(bubble.ActualWidth - quotaWidth) > .1 || Math.Abs(bubbleScale.ScaleY - expectedScale) > .001)
                 throw new InvalidOperationException("Greeting and quota bubble sizes use different scales.");
             if (Math.Abs(paintedGap - 6) > 1 || Math.Abs(unusedHeight) > 1 || bubble.ActualHeight >= quotaHeight || bubble.ActualHeight > 105 * expectedScale)
-                throw new InvalidOperationException($"Greeting layout regression ({person}/{language}/{size}): gap={paintedGap:0.0}, unused={unusedHeight:0.0}, greeting={bubble.ActualHeight:0.0}, quota={quotaHeight:0.0} DIP.");
+                throw new InvalidOperationException($"Greeting layout regression ({person}/{language}/{size}): gap={paintedGap:0.0}, unused={unusedHeight:0.0}, greeting={bubble.ActualHeight:0.0}, quota={quotaHeight:0.0} DIP; height={bubble.Height:0.0}, desired={bubble.DesiredSize.Height:0.0}, textDesired={bubbleText.DesiredSize.Height:0.0}, titleDesired={bubbleTitle.DesiredSize.Height:0.0}, gridDesired={bubble.Child.DesiredSize.Height:0.0}, stackDesired={((Grid)bubble.Child).Children[0].DesiredSize.Height:0.0}, textLength={bubbleText.Text.Length}, mode={controller.Bubble}, panel={quotaPanel.Visibility}.");
             foreach (var reduced in new[] { false, true })
             {
                 settings = settings with { ReducedMotion = reduced }; Poke();

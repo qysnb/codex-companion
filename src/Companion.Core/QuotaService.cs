@@ -3,7 +3,7 @@ namespace CodexCompanion.Core;
 
 public enum QuotaNetworkMode { Local, OnDemand, Automatic }
 
-public sealed class QuotaService : IAsyncDisposable
+public sealed partial class QuotaService : IAsyncDisposable
 {
     readonly object _sync = new();
     readonly Func<CancellationToken, Task<ICodexConnection>> _connect;
@@ -37,7 +37,7 @@ public sealed class QuotaService : IAsyncDisposable
     public event Action<QuotaSnapshot>? Updated;
     public event Action<QuotaResetNotice>? ResetDetected;
     public bool IsCurrentResetNotice(QuotaResetNotice notice)
-    { lock (_sync) return !_disposed && ReferenceEquals(_lastResetNotice, notice); }
+    { lock (_sync) return !_disposed && !LocalPreferred() && ReferenceEquals(_lastResetNotice, notice); }
 
     public QuotaService(Func<CancellationToken, Task<ICodexConnection>>? connect = null, Func<DateTimeOffset>? clock = null)
     {
@@ -45,7 +45,7 @@ public sealed class QuotaService : IAsyncDisposable
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
-    public QuotaSnapshot Snapshot { get { lock (_sync) return _snapshot; } }
+    public QuotaSnapshot Snapshot { get { lock (_sync) return CurrentSnapshot(); } }
     public bool IsRefreshing { get { lock (_sync) return _refresh is { IsCompleted: false }; } }
     public QuotaNetworkMode NetworkMode
     {
@@ -131,7 +131,8 @@ public sealed class QuotaService : IAsyncDisposable
             var manual = force && !scheduled;
             if (_networkMode == QuotaNetworkMode.Local && !manual ||
                 _networkMode == QuotaNetworkMode.OnDemand && scheduled)
-                return Task.FromResult(_snapshot);
+                return Task.FromResult(CurrentSnapshot());
+            if (!manual && LocalFresh(now)) return Task.FromResult(CurrentSnapshot());
             ObserveElapsedResets(now);
             if (_networkMode == QuotaNetworkMode.OnDemand && !force &&
                 _lastAttempt is { } attempted && now - attempted < TimeSpan.FromSeconds(Math.Max(900, _refreshInterval.TotalSeconds)))
@@ -517,6 +518,7 @@ public sealed class QuotaService : IAsyncDisposable
 
     DateTimeOffset NetworkDeadline(DateTimeOffset now)
         => _networkMode != QuotaNetworkMode.Automatic ? DateTimeOffset.MaxValue
+            : LocalFresh(now) ? _localObservedAt!.Value + _refreshInterval
             : _failures > 0 ? _retryAt : _prefetchPending || _resetPending || _notificationPending ? now : _nextPeriodic;
 
     TimeSpan NextDelay(DateTimeOffset now, bool refreshing)

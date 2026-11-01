@@ -28,19 +28,23 @@ The app accepts only these fixed values. A stopped get-status or hide returns an
 
 ## Network policy
 
-Version0.5.0 defaults to **local cache, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh quota online. An explicit request for a fresh online reading permits one refresh-quota call.
+Version0.6.0 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh quota online. An explicit request for a fresh online reading permits one refresh-quota call.
 
 The user can select the network mode in the character's right-click menu:
 
-- `local`: clicks display memory cache; only explicit refresh-quota or Refresh quota online uses the network.
+- `local`: the app subscribes read-only to new host quota events and clicks display memory cache; only explicit refresh-quota or Refresh quota online uses the network.
 - `on-demand`: a quota-page click may read online, with at least max(900seconds, configured refresh interval) between attempts, including failed attempts. No background polling.
 - `automatic`: explicitly selected prefetch, periodic reads, retries and cached-reset reads. Hidden state still refreshes. New interval preference defaults to900seconds; previous user values are preserved.
 
 Changing the interval does not enable automatic mode. Status includes `quotaNetworkMode` and `refreshIntervalSeconds`. Do not enable automatic networking or invoke repeated refreshes without a user request. The private App Server child disables unrelated plugin, skill, MCP, model-discovery and analytics initialization without changing desktop Codex's global configuration. Online reads still incur traffic; do not promise a fixed byte cost or zero traffic after a manual refresh.
 
+Local event subscription is enabled by default and can be disabled in the right-click menu. It reads only quota events from CODEX_HOME/sessions, does not replay pre-attachment quota, does not parse or output message bodies, and does not query the network. Auth-file metadata changes invalidate the cache; credential contents are never read. Internal event formats can change. Do not repeatedly call get_usage_limits or refresh-quota to simulate a subscription. No host event means no new quota knowledge.
+
+Status includes quotaSource (local-session/app-server/none), localQuotaSync, and localQuotaSubscription statistics. A local-session snapshot is an observed host event, not a verified account identity; do not claim it is an account-verified online read or that it can produce account-verified reset reminders. Whole snapshots remain separate across sources.
+
 ## Reporting quota
 
-Report percentages only from returned data with the original `updatedAt`. A cached snapshot, even if its status remains live from its last successful read, is not proof of a fresh network response. Missing windows are unknown. Never open, copy, print or request login secrets. Cache is memory-only and empty after restart; do not fabricate persisted values or infer100% from a reset countdown. Snapshot display is immediate memory access, not a guarantee of a fresh network round trip below150ms.
+Report percentages only from returned data with the original `updatedAt`. A cached snapshot, even if its status remains live from its last successful read, is not proof of a fresh network response. Missing windows are unknown. Never open, copy, print or request login secrets. Cache is memory-only and empty after restart until a new local event or explicit online read; do not fabricate persisted values or infer100% from a reset countdown. Snapshot display is immediate memory access, not a guarantee of a fresh network round trip below150ms.
 
 The refresh-quota reply acknowledges a requested online refresh and may contain the previous snapshot. Record its updatedAt, then poll get-status about once per second for at most30seconds; these status polls do not initiate quota requests. Report a fresh reading only after updatedAt changes with live status. If the result becomes stale/unavailable/notLoggedIn, report that state. If the timestamp does not change before the bound, say the refresh is still pending and label any displayed reading with its earlier timestamp. Do not repeatedly issue refresh-quota as a polling method.
 
