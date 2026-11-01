@@ -1,6 +1,8 @@
 using System.Text.Json;
 namespace CodexCompanion.Core;
 
+public enum QuotaNetworkMode { Local, OnDemand, Automatic }
+
 public sealed class QuotaService : IAsyncDisposable
 {
     readonly object _sync = new();
@@ -15,6 +17,9 @@ public sealed class QuotaService : IAsyncDisposable
     ICodexConnection? _connection;
     Action<string, JsonElement>? _notificationHandler;
     Task<QuotaSnapshot>? _refresh;
+    CancellationTokenSource? _readStop;
+    CancellationTokenSource? _policyCancelledRead;
+    bool _refreshManual;
     Task? _loop;
     QuotaSnapshot _snapshot = new(QuotaStatus.Loading, null, null, null);
     DateTimeOffset? _lastSuccess;
@@ -23,6 +28,8 @@ public sealed class QuotaService : IAsyncDisposable
     string? _lastKnownIdentity;
     DateTimeOffset _nextPeriodic = DateTimeOffset.MinValue, _retryAt = DateTimeOffset.MinValue, _refreshStartedAt;
     TimeSpan _refreshInterval = TimeSpan.FromSeconds(30);
+    QuotaNetworkMode _networkMode = QuotaNetworkMode.Automatic;
+    DateTimeOffset? _lastAttempt;
     long _accountEpoch, _quotaRevision;
     int _failures;
     bool _visible, _signedOut, _disposed, _readingInitialAccount, _prefetchPending, _accountKnownOnConnection, _resetPending, _notificationPending;
@@ -40,6 +47,27 @@ public sealed class QuotaService : IAsyncDisposable
 
     public QuotaSnapshot Snapshot { get { lock (_sync) return _snapshot; } }
     public bool IsRefreshing { get { lock (_sync) return _refresh is { IsCompleted: false }; } }
+    public QuotaNetworkMode NetworkMode
+    {
+        get { lock (_sync) return _networkMode; }
+        set
+        {
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            CancellationTokenSource? cancel = null;
+            lock (_sync)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_networkMode == value) return;
+                _networkMode = value;
+                _prefetchPending = value == QuotaNetworkMode.Automatic && _lastSuccess is null && _refresh is not { IsCompleted: false };
+                if (value == QuotaNetworkMode.Automatic)
+                    _nextPeriodic = _lastSuccess is { } last ? last + _refreshInterval : _clock();
+                else if (!_refreshManual && _readStop is not null) cancel = _policyCancelledRead = _readStop;
+            }
+            try { cancel?.Cancel(); } catch (ObjectDisposedException) { }
+            Wake();
+        }
+    }
     public TimeSpan RefreshInterval
     {
         get { lock (_sync) return _refreshInterval; }
@@ -76,7 +104,7 @@ public sealed class QuotaService : IAsyncDisposable
             // Keep startup and the UI thread independent of that work.
             if (_loop is null)
             {
-                _prefetchPending = _lastSuccess is null && _refresh is not { IsCompleted: false };
+                _prefetchPending = _networkMode == QuotaNetworkMode.Automatic && _lastSuccess is null && _refresh is not { IsCompleted: false };
                 _loop = Task.Run(PollAsync);
             }
         }
@@ -91,42 +119,69 @@ public sealed class QuotaService : IAsyncDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         TaskCompletionSource<QuotaSnapshot> completion;
+        CancellationTokenSource readStop;
         long epoch, revision;
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             var now = _clock();
+            // Only a deliberate, non-scheduled force request can use the
+            // network in local mode. Notifications and retry/reset timers must
+            // pass the same gate as ordinary clicks.
+            var manual = force && !scheduled;
+            if (_networkMode == QuotaNetworkMode.Local && !manual ||
+                _networkMode == QuotaNetworkMode.OnDemand && scheduled)
+                return Task.FromResult(_snapshot);
             ObserveElapsedResets(now);
+            if (_networkMode == QuotaNetworkMode.OnDemand && !force &&
+                _lastAttempt is { } attempted && now - attempted < TimeSpan.FromSeconds(Math.Max(900, _refreshInterval.TotalSeconds)))
+                return Task.FromResult(_snapshot);
             if (!force && !_resetPending && !_notificationPending && _lastSuccess is { } last && now - last < TimeSpan.FromSeconds(30) &&
                 _snapshot.Status is QuotaStatus.Live or QuotaStatus.NotLoggedIn)
             {
                 return Task.FromResult(_snapshot);
             }
             if (_refresh is { IsCompleted: false })
+            {
+                if (manual && (_policyCancelledRead is not null || _readStop?.IsCancellationRequested == true))
+                    return RefreshAfterPolicyCancellationAsync(_refresh, cancellationToken);
+                if (manual) _refreshManual = true;
                 return !force && _failures > 0 && (_snapshot.FiveHour is not null || _snapshot.Weekly is not null)
                     ? Task.FromResult(_snapshot) : _refresh.WaitAsync(cancellationToken);
+            }
             if (scheduled && now < NetworkDeadline(now)) return Task.FromResult(_snapshot);
             if ((!force || scheduled) && _failures > 0 && now < _retryAt) return Task.FromResult(_snapshot);
             completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
             _refresh = completion.Task;
+            readStop = _readStop = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+            _policyCancelledRead = null;
+            _refreshManual = manual;
             _connectionUsed = now;
             _refreshStartedAt = now;
+            _lastAttempt = now;
             _prefetchPending = _resetPending = _notificationPending = false;
             epoch = _accountEpoch;
             revision = _quotaRevision;
         }
         // A caller cancelling its wait must not cancel another caller's shared read.
-        _ = Task.Run(() => RefreshCoreAsync(completion, epoch, revision));
+        _ = Task.Run(() => RefreshCoreAsync(completion, epoch, revision, readStop));
         Wake();
         return completion.Task.WaitAsync(cancellationToken);
     }
 
-    async Task RefreshCoreAsync(TaskCompletionSource<QuotaSnapshot> completion, long epoch, long startedRevision)
+    async Task<QuotaSnapshot> RefreshAfterPolicyCancellationAsync(Task<QuotaSnapshot> previous, CancellationToken cancellationToken)
+    {
+        await previous.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return await RequestRefresh(true, scheduled: false, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task RefreshCoreAsync(TaskCompletionSource<QuotaSnapshot> completion, long epoch, long startedRevision, CancellationTokenSource readStop)
     {
         ICodexConnection? connection = null;
         var stage = "connect";
         var identityVerified = false;
         var unattached = false;
+        var readToken = readStop.Token;
         try
         {
             lock (_sync) { if (_disposed || epoch != _accountEpoch) return; connection = _connection; }
@@ -137,9 +192,9 @@ public sealed class QuotaService : IAsyncDisposable
                     if (_snapshot.FiveHour is not null || _snapshot.Weekly is not null)
                         pending = _snapshot = _snapshot with { Status = QuotaStatus.Stale };
                 if (pending is not null) RaiseUpdated(pending);
-                var connecting = _connect(_stop.Token);
-                try { connection = await connecting.WaitAsync(_stop.Token).ConfigureAwait(false); }
-                catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+                var connecting = _connect(readToken);
+                try { connection = await connecting.WaitAsync(readToken).ConfigureAwait(false); }
+                catch (OperationCanceledException) when (readToken.IsCancellationRequested)
                 { _ = DisposeLateConnectionAsync(connecting); throw; }
                 unattached = true;
                 lock (_sync)
@@ -155,7 +210,7 @@ public sealed class QuotaService : IAsyncDisposable
                 }
             }
             stage = "account/read";
-            var account = await RequestAsync(connection, "account/read", new { refreshToken = false }).ConfigureAwait(false);
+            var account = await RequestAsync(connection, "account/read", new { refreshToken = false }, readToken).ConfigureAwait(false);
             lock (_sync)
             {
                 _readingInitialAccount = false;
@@ -202,13 +257,24 @@ public sealed class QuotaService : IAsyncDisposable
             }
             if (cleared is not null) RaiseUpdated(cleared);
             stage = "account/rateLimits/read";
-            var response = await RequestAsync(connection, "account/rateLimits/read", new { }).ConfigureAwait(false);
+            var response = await RequestAsync(connection, "account/rateLimits/read", new { }, readToken).ConfigureAwait(false);
             lock (_sync) { if (_disposed || epoch != _accountEpoch || revision != _quotaRevision) return; }
             var parsed = QuotaParser.Parse(response, _clock());
             if (parsed.Status != QuotaStatus.Live) throw new IOException("Quota information is unavailable.");
             Publish(parsed, epoch, success: true, revision);
         }
-        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception) when (readToken.IsCancellationRequested)
+        {
+            ICodexConnection? cancelled = null;
+            lock (_sync)
+            {
+                if (ReferenceEquals(_connection, connection)) cancelled = DetachConnection();
+                if (!_disposed && epoch == _accountEpoch && !identityVerified &&
+                    (_quotaRevision == startedRevision || _snapshot.Status != QuotaStatus.Live))
+                { _snapshot = new(QuotaStatus.Loading, null, null, null); _lastSuccess = null; }
+            }
+            if (cancelled is not null) await SafeDisposeAsync(cancelled).ConfigureAwait(false);
+        }
         catch (Exception error)
         {
             // Raw process/RPC errors can contain tokens or account data.
@@ -253,9 +319,14 @@ public sealed class QuotaService : IAsyncDisposable
                 _readingInitialAccount = false;
                 if (ReferenceEquals(connection, _connection)) _connectionUsed = _clock();
                 dispose = unattached;
+                if (ReferenceEquals(_readStop, readStop)) { _readStop = null; _refreshManual = false; }
             }
             if (dispose && connection is not null) try { await connection.DisposeAsync().ConfigureAwait(false); } catch { }
             completion.TrySetResult(Snapshot);
+            lock (_sync)
+                if (ReferenceEquals(_refresh, completion.Task) && ReferenceEquals(_policyCancelledRead, readStop))
+                    _policyCancelledRead = null;
+            readStop.Dispose();
             Wake();
         }
     }
@@ -296,12 +367,12 @@ public sealed class QuotaService : IAsyncDisposable
         return null;
     }
 
-    async Task<JsonElement> RequestAsync(ICodexConnection connection, string method, object parameters)
+    async Task<JsonElement> RequestAsync(ICodexConnection connection, string method, object parameters, CancellationToken readToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(readToken);
         timeout.CancelAfter(CodexRequestPolicy.TimeoutFor(method));
         try { return await connection.RequestAsync(method, parameters, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException) when (!_stop.IsCancellationRequested)
+        catch (OperationCanceledException) when (!readToken.IsCancellationRequested)
         { throw new TimeoutException("Codex read deadline elapsed."); }
     }
 
@@ -445,7 +516,8 @@ public sealed class QuotaService : IAsyncDisposable
     }
 
     DateTimeOffset NetworkDeadline(DateTimeOffset now)
-        => _failures > 0 ? _retryAt : _prefetchPending || _resetPending || _notificationPending ? now : _nextPeriodic;
+        => _networkMode != QuotaNetworkMode.Automatic ? DateTimeOffset.MaxValue
+            : _failures > 0 ? _retryAt : _prefetchPending || _resetPending || _notificationPending ? now : _nextPeriodic;
 
     TimeSpan NextDelay(DateTimeOffset now, bool refreshing)
     {
@@ -455,7 +527,7 @@ public sealed class QuotaService : IAsyncDisposable
             var idleAt = _visible ? _connectionUsed.AddSeconds(10) : now;
             if (idleAt < deadline) deadline = idleAt;
         }
-        foreach (var timestamp in _scheduledResets)
+        if (_networkMode == QuotaNetworkMode.Automatic) foreach (var timestamp in _scheduledResets)
         {
             var resetAt = DateTimeOffset.FromUnixTimeSeconds(timestamp);
             if (resetAt < deadline) deadline = resetAt;

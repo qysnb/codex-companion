@@ -14,7 +14,8 @@ public sealed record CompanionSettings
     public bool ReducedMotion { get; init; }
     public bool Startup { get; init; }
     public bool QuotaResetNotifications { get; init; } = true;
-    public int RefreshIntervalSeconds { get; init; } = 30;
+    public int RefreshIntervalSeconds { get; init; } = 900;
+    public string QuotaNetworkMode { get; init; } = "local";
     // 0 stays open until dismissed; legacy -1 normalizes to the new 10s default.
     public int BubbleDurationSeconds { get; init; } = 10;
     public TimeSpan? GetBubbleDuration(BubbleKind kind) => BubbleDurationSeconds == 0 ? null
@@ -31,7 +32,8 @@ public sealed record CompanionSettings
         Size = Sizes.Any(size => size.Id == Size) ? Size : "medium",
         QuotaTextColor = IsThemeColor(QuotaTextColor) ? QuotaTextColor.ToUpperInvariant() : "#3D2F42",
         QuotaBarColor = IsThemeColor(QuotaBarColor) ? QuotaBarColor.ToUpperInvariant() : "#00A9D6",
-        RefreshIntervalSeconds = RefreshIntervalSeconds is >= 5 and <= 3600 ? RefreshIntervalSeconds : 30,
+        RefreshIntervalSeconds = RefreshIntervalSeconds is >= 5 and <= 3600 ? RefreshIntervalSeconds : 900,
+        QuotaNetworkMode = QuotaNetworkMode is "local" or "on-demand" or "automatic" ? QuotaNetworkMode : "local",
         BubbleDurationSeconds = BubbleDurationSeconds is >= 0 and <= 86400 ? BubbleDurationSeconds : 10,
         OffsetX = double.IsFinite(OffsetX) && Math.Abs(OffsetX) <= 10000 ? OffsetX : 0,
         OffsetY = double.IsFinite(OffsetY) && Math.Abs(OffsetY) <= 10000 ? OffsetY : 0

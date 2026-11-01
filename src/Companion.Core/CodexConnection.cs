@@ -63,13 +63,24 @@ public sealed class CodexConnection : ICodexConnection
                 };
                 start.ArgumentList.Add("app-server");
                 if (proxy) start.ArgumentList.Add("proxy");
-                else { start.ArgumentList.Add("--listen"); start.ArgumentList.Add("stdio://"); }
+                else
+                {
+                    start.ArgumentList.Add("--listen"); start.ArgumentList.Add("stdio://");
+                    // This process only reads account/quota metadata. Avoid
+                    // loading unrelated plugins, skills, MCP servers or model
+                    // discovery. Overrides never modify the desktop config.
+                    foreach (var feature in new[] { "plugins", "remote_plugin", "api_key_model_discovery" })
+                    { start.ArgumentList.Add("--disable"); start.ArgumentList.Add(feature); }
+                    start.ArgumentList.Add("--enable"); start.ArgumentList.Add("skip_host_skill_discovery");
+                    start.ArgumentList.Add("-c"); start.ArgumentList.Add("analytics.enabled=false");
+                    start.ArgumentList.Add("-c"); start.ArgumentList.Add("mcp_servers={}");
+                }
                 var process = Process.Start(start) ?? throw new IOException("Codex could not be started.");
                 Trace("start:" + (proxy ? "proxy" : "stdio"));
                 connection = new CodexConnection(process);
                 await connection.RequestAsync("initialize", new
                 {
-                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.4.10" },
+                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.5.0" },
                     capabilities = new { experimentalApi = false }
                 }, cancellationToken).ConfigureAwait(false);
                 await connection.WriteAsync(new { method = "initialized" }, cancellationToken).ConfigureAwait(false);

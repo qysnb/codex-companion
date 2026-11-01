@@ -65,6 +65,7 @@ internal sealed partial class CompanionWindow : Window
         settings = store.Load(); controller.SetCharacter(settings.Character); controller.SetLanguage(settings.Language);
         displayHeight = settings.Height;
         quota.RefreshInterval = TimeSpan.FromSeconds(settings.RefreshIntervalSeconds);
+        quota.NetworkMode = NetworkMode(settings.QuotaNetworkMode);
         Title = "Codex Companion"; Width = displayHeight + 12; Height = displayHeight + 12;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; AllowsTransparency = true; Background = Brushes.Transparent;
         ShowInTaskbar = false; ShowActivated = false; Topmost = true; Focusable = false;
@@ -391,6 +392,13 @@ internal sealed partial class CompanionWindow : Window
         }
         menu.Items.Add(language); menu.Items.Add(person); menu.Items.Add(size); menu.Items.Add(new Separator());
         menu.Items.Add(Item(Local("主题…", "Theme…", "テーマ…"), ConfigureTheme));
+        var network = new MenuItem { Header = Local("额度联网方式", "Quota network access", "利用枠の通信方式") };
+        foreach (var (value, label) in new[] {
+            ("local", Local("本地缓存（仅手动联网）", "Local cache (manual network only)", "ローカルキャッシュ（手動通信のみ）")),
+            ("on-demand", Local("按需联网（至少缓存 15 分钟）", "On demand (cache at least 15 min)", "必要時のみ（15分以上キャッシュ）")),
+            ("automatic", Local("自动联网（可能消耗较多流量）", "Automatic (higher data usage)", "自動通信（データ使用量が増加）")) })
+            network.Items.Add(Item(label, () => SetQuotaNetworkMode(value), settings.QuotaNetworkMode == value));
+        menu.Items.Add(network);
         var duration = new MenuItem { Header = Local("页面持续时间", "Bubble duration", "吹き出しの表示時間") };
         foreach (var seconds in new[] { 1, 3, 5, 10 })
             duration.Items.Add(Item(seconds + "s", () => SetBubbleDuration(seconds), settings.BubbleDurationSeconds == seconds));
@@ -399,7 +407,7 @@ internal sealed partial class CompanionWindow : Window
         var customDuration = settings.BubbleDurationSeconds > 0 && settings.BubbleDurationSeconds is not (1 or 3 or 5 or 10);
         duration.Items.Add(Item(Local("自定义…", "Custom…", "カスタム…") + (customDuration ? $" ({settings.BubbleDurationSeconds}s)" : ""), ConfigureBubbleDuration, customDuration));
         menu.Items.Add(duration);
-        var refresh = new MenuItem { Header = Local("额度刷新间隔", "Quota refresh interval", "利用枠の更新間隔") };
+        var refresh = new MenuItem { Header = Local("额度刷新间隔（自动模式）", "Refresh interval (automatic mode)", "更新間隔（自動モード）"), IsEnabled = settings.QuotaNetworkMode == "automatic" };
         foreach (var seconds in new[] { 15, 30, 60, 120, 300 })
             refresh.Items.Add(Item(seconds + Local(" 秒", " seconds", " 秒"), () => SetRefreshInterval(seconds), settings.RefreshIntervalSeconds == seconds));
         refresh.Items.Add(new Separator());
@@ -412,7 +420,7 @@ internal sealed partial class CompanionWindow : Window
             Save();
         }, settings.QuotaResetNotifications));
         menu.Items.Add(Item(Local("减少动画", "Reduce motion", "アニメーションを減らす"), () => { settings = settings with { ReducedMotion = !settings.ReducedMotion }; Save(); }, settings.ReducedMotion));
-        menu.Items.Add(Item(Local("立即刷新额度", "Refresh quota", "利用枠を更新"), () => _ = quota.RefreshAsync(true)));
+        menu.Items.Add(Item(Local("联网刷新额度", "Refresh quota online", "通信して利用枠を更新"), () => _ = quota.RefreshAsync(true)));
         menu.Items.Add(Item(Local("重置位置", "Reset position", "位置をリセット"), () => { settings = settings with { OffsetX = 0, OffsetY = 0 }; Save(); }));
         menu.Items.Add(Item(Local("开机启动", "Start with Windows", "Windows 起動時に実行"), ToggleStartup, settings.Startup));
         menu.Items.Add(new Separator()); menu.Items.Add(Item(Local("退出", "Exit", "終了"), () => Application.Current.Shutdown()));
@@ -420,6 +428,13 @@ internal sealed partial class CompanionWindow : Window
     }
     void SetRefreshInterval(int seconds)
     { settings = settings with { RefreshIntervalSeconds = Math.Clamp(seconds, 5, 3600) }; quota.RefreshInterval = TimeSpan.FromSeconds(settings.RefreshIntervalSeconds); Save(); }
+    static QuotaNetworkMode NetworkMode(string mode) => mode switch { "on-demand" => QuotaNetworkMode.OnDemand, "automatic" => QuotaNetworkMode.Automatic, _ => QuotaNetworkMode.Local };
+    void SetQuotaNetworkMode(string mode)
+    {
+        settings = (settings with { QuotaNetworkMode = mode }).Normalize();
+        quota.NetworkMode = NetworkMode(settings.QuotaNetworkMode); Save();
+        if (controller.Bubble == BubbleKind.Quota) RenderQuota();
+    }
     void ConfigureRefreshInterval()
     {
         settingsDialogOpen = true;
@@ -502,6 +517,6 @@ internal sealed partial class CompanionWindow : Window
             case "refresh-quota": _ = quota.RefreshAsync(true); break;
         }
         using var process = Process.GetCurrentProcess();
-        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
+        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
     }
 }

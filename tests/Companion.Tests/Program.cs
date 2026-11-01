@@ -59,6 +59,7 @@ QuotaTests.Run();
 QuotaRecoveryTests.Run();
 QuotaResetTests.Run();
 QuotaDeadlineTests.Run();
+QuotaNetworkPolicyTests.Run();
 return 0;
 }
 catch (Exception error)

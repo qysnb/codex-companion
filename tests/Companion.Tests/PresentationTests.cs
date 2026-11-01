@@ -6,7 +6,7 @@ public static class PresentationTests
     {
         void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
         Check(CharacterNames.Get("elegant") == "Astra" && CharacterNames.Get("mischievous") == "Sol" && CharacterNames.Get("cute") == "Luna", "Only display names change; existing IDs keep their mapping.");
-        Check(new CompanionSettings().RefreshIntervalSeconds == 30 && (new CompanionSettings { RefreshIntervalSeconds = 1 }).Normalize().RefreshIntervalSeconds == 30, "Refresh defaults to 30 seconds and unsafe persisted intervals recover to the default.");
+        Check(new CompanionSettings().RefreshIntervalSeconds == 900 && (new CompanionSettings { RefreshIntervalSeconds = 1 }).Normalize().RefreshIntervalSeconds == 900, "New opt-in automatic intervals default to 900 seconds and invalid values recover to that default.");
         Check((new CompanionSettings { RefreshIntervalSeconds = 5 }).Normalize().RefreshIntervalSeconds == 5 && (new CompanionSettings { RefreshIntervalSeconds = 3600 }).Normalize().RefreshIntervalSeconds == 3600, "Custom refresh interval endpoints must be supported.");
         Check(CompanionCommand.Validate("set-refresh-interval", "60") is null && CompanionCommand.Validate("set-refresh-interval", "4") is not null && CompanionCommand.Validate("set-refresh-interval", "3601") is not null, "IPC refresh intervals must use the same bounds as settings.");
         var character = new PixelRect(900, 600, 240, 240); var work = new PixelRect(0, 0, 1920, 1080);
