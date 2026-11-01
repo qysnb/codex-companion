@@ -28,17 +28,17 @@ The app accepts only these fixed values. A stopped get-status or hide returns an
 
 ## Network policy
 
-Version0.6.0 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh quota online. An explicit request for a fresh online reading permits one refresh-quota call.
+Version0.6.1 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh online once. An explicit request for a fresh online reading permits one refresh-quota call.
 
-The user can select the network mode in the character's right-click menu:
+The user can select the online supplement mode under right-click → Quota settings → Online supplements:
 
-- `local`: the app subscribes read-only to new host quota events and clicks display memory cache; only explicit refresh-quota or Refresh quota online uses the network.
+- `local`: the app subscribes read-only to new host quota events and clicks display memory cache; only explicit refresh-quota or Refresh online once uses the network.
 - `on-demand`: a quota-page click may read online, with at least max(900seconds, configured refresh interval) between attempts, including failed attempts. No background polling.
 - `automatic`: explicitly selected prefetch, periodic reads, retries and cached-reset reads. Hidden state still refreshes. New interval preference defaults to900seconds; previous user values are preserved.
 
 Changing the interval does not enable automatic mode. Status includes `quotaNetworkMode` and `refreshIntervalSeconds`. Do not enable automatic networking or invoke repeated refreshes without a user request. The private App Server child disables unrelated plugin, skill, MCP, model-discovery and analytics initialization without changing desktop Codex's global configuration. Online reads still incur traffic; do not promise a fixed byte cost or zero traffic after a manual refresh.
 
-Local event subscription is enabled by default and can be disabled in the right-click menu. It reads only quota events from CODEX_HOME/sessions, does not replay pre-attachment quota, does not parse or output message bodies, and does not query the network. Auth-file metadata changes invalidate the cache; credential contents are never read. Internal event formats can change. Do not repeatedly call get_usage_limits or refresh-quota to simulate a subscription. No host event means no new quota knowledge.
+Local event subscription is enabled by default and can be disabled under Quota settings → Automatic local sync. It reads only quota events from CODEX_HOME/sessions, does not replay pre-attachment quota, does not parse or output message bodies, and does not query the network. Auth-file metadata changes invalidate the cache; credential contents are never read. Internal event formats can change. Do not repeatedly call get_usage_limits or refresh-quota to simulate a subscription. No host event means no new quota knowledge.
 
 Status includes quotaSource (local-session/app-server/none), localQuotaSync, and localQuotaSubscription statistics. A local-session snapshot is an observed host event, not a verified account identity; do not claim it is an account-verified online read or that it can produce account-verified reset reminders. Whole snapshots remain separate across sources.
 
@@ -50,6 +50,6 @@ The refresh-quota reply acknowledges a requested online refresh and may contain 
 
 If referencePreview is true, original reference illustrations are being displayed, and finished transparent expression art is not installed. Do not describe these references as finished animation assets.
 
-Quota reset reminders are enabled by default and can be disabled in the character's right-click menu. They only announce an observed same-account transition from actual0% to100%, never an inferred reset. Local mode needs a subsequent explicit online read to observe changes; on-demand mode also does not guarantee a reminder at the expected reset time. Status includes quotaResetNotifications. Failures include failureKind and retryAt; only automatic mode retries on the5/15/60-second schedule. Old account caches are restored only after the same account is verified. Do not claim the external quota service is always available.
+Quota reset reminders are enabled by default and can be disabled under Quota settings → Reset reminders (online confirmation). They only announce an observed same-account transition from actual0% to100%, never an inferred reset. Local mode needs a subsequent explicit online read to observe changes; on-demand mode also does not guarantee a reminder at the expected reset time. Status includes quotaResetNotifications. Failures include failureKind and retryAt; only automatic mode retries on the5/15/60-second schedule. Old account caches are restored only after the same account is verified. Do not claim the external quota service is always available.
 
 If bin/CodexCompanion.Cli.exe or CodexCompanion.exe is missing, install the complete marketplace package. Do not run or restore quarantined scripts, alter antivirus settings, or override PowerShell execution policy.

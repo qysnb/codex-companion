@@ -12,6 +12,15 @@ internal static class Program
 #if DEBUG
             if (args.Length is 2 or 3 && args[0] == "--prepare-art" && (args.Length == 2 || CompanionSettings.Characters.Contains(args[2]))) return Output(AssetInspection.PrepareArt(args[1], args.Length == 3 ? args[2] : null), 0);
 #endif
+            if (args.SequenceEqual(new[] { "--verify-settings" }) || args.Length == 3 && args[0] == "--verify-settings" && args[1] == "--preview")
+            {
+                _ = new Application();
+                var connections = 0;
+                var service = new QuotaService(_ => { connections++; throw new InvalidOperationException("Menu verification cannot connect to Codex."); });
+                var window = new CompanionWindow(service);
+                try { return Output(new { ok = true, result = window.VerifySettingsMenus(args.Length == 3 ? args[2] : null), networkConnectionsAttempted = connections }, 0); }
+                finally { window.StopAsync().GetAwaiter().GetResult(); }
+            }
             if (args.SequenceEqual(new[] { "--verify-ui" })) return VerifyUi(false);
             if (args.Length == 3 && args[0] == "--verify-ui" && args[1] == "--preview") return VerifyUi(false, args[2]);
             if (args.SequenceEqual(new[] { "--verify-ui-live" })) return VerifyUi(true);

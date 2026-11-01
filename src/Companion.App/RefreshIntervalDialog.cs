@@ -9,12 +9,12 @@ internal sealed class RefreshIntervalDialog : Window
     internal RefreshIntervalDialog(Window owner, int seconds, string language)
     {
         string Text(string zh, string en, string ja) => language switch { "en" => en, "ja" => ja, _ => zh };
-        Owner = owner; Seconds = seconds; Title = Text("额度刷新间隔", "Quota refresh interval", "利用枠の更新間隔");
+        Owner = owner; Seconds = seconds; Title = Text("联网补充间隔", "Online supplement interval", "オンライン補完の間隔");
         Width = 380; SizeToContent = SizeToContent.Height; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterScreen; ShowInTaskbar = false;
         var panel = new StackPanel { Margin = new(20) };
-        panel.Children.Add(new TextBlock { Text = Text("每隔多少秒在后台刷新？（5–3600）", "Refresh in the background every how many seconds? (5–3600)", "バックグラウンド更新の間隔（5～3600 秒）"), TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = Text("定时联网补充的间隔（5–3600 秒）", "Seconds between scheduled online supplements (5–3600)", "オンライン補完の間隔（5～3600 秒）"), TextWrapping = TextWrapping.Wrap });
         var input = new TextBox { Text = seconds.ToString(CultureInfo.CurrentCulture), Margin = new(0, 10, 0, 8), Padding = new(6) }; panel.Children.Add(input);
-        var hint = new TextBlock { Text = Text("间隔越短，后台请求和资源占用越多。", "Shorter intervals use more background requests and resources.", "短い間隔ほど通信回数とリソース使用量が増えます。"), TextWrapping = TextWrapping.Wrap, FontSize = 12 }; panel.Children.Add(hint);
+        var hint = new TextBlock { Text = Text("本地同步即时跟随宿主更新，不受此间隔限制。较短间隔可能增加流量。", "Local sync follows host updates independently. Shorter online intervals can use more data.", "ローカル同期はこの間隔に制限されません。短い間隔では通信量が増える場合があります。"), TextWrapping = TextWrapping.Wrap, FontSize = 12 }; panel.Children.Add(hint);
         var button = new Button { Content = Text("保存", "Save", "保存"), IsDefault = true, HorizontalAlignment = HorizontalAlignment.Right, MinWidth = 80, Padding = new(10, 5, 10, 5), Margin = new(0, 16, 0, 0) };
         button.Click += (_, _) =>
         {

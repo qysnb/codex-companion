@@ -423,14 +423,6 @@ internal sealed partial class CompanionWindow : Window
         }
         menu.Items.Add(language); menu.Items.Add(person); menu.Items.Add(size); menu.Items.Add(new Separator());
         menu.Items.Add(Item(Local("主题…", "Theme…", "テーマ…"), ConfigureTheme));
-        var network = new MenuItem { Header = Local("额度联网方式", "Quota network access", "利用枠の通信方式") };
-        foreach (var (value, label) in new[] {
-            ("local", Local("本地同步（仅手动联网）", "Local sync (manual network only)", "ローカル同期（手動通信のみ）")),
-            ("on-demand", Local("按需联网（至少缓存 15 分钟）", "On demand (cache at least 15 min)", "必要時のみ（15分以上キャッシュ）")),
-            ("automatic", Local("自动联网（可能消耗较多流量）", "Automatic (higher data usage)", "自動通信（データ使用量が増加）")) })
-            network.Items.Add(Item(label, () => SetQuotaNetworkMode(value), settings.QuotaNetworkMode == value));
-        menu.Items.Add(network);
-        menu.Items.Add(Item(Local("监听本地额度事件", "Subscribe to local quota events", "ローカル利用枠イベントを監視"), ToggleLocalQuotaSync, settings.LocalQuotaSync));
         var duration = new MenuItem { Header = Local("页面持续时间", "Bubble duration", "吹き出しの表示時間") };
         foreach (var seconds in new[] { 1, 3, 5, 10 })
             duration.Items.Add(Item(seconds + "s", () => SetBubbleDuration(seconds), settings.BubbleDurationSeconds == seconds));
@@ -439,20 +431,10 @@ internal sealed partial class CompanionWindow : Window
         var customDuration = settings.BubbleDurationSeconds > 0 && settings.BubbleDurationSeconds is not (1 or 3 or 5 or 10);
         duration.Items.Add(Item(Local("自定义…", "Custom…", "カスタム…") + (customDuration ? $" ({settings.BubbleDurationSeconds}s)" : ""), ConfigureBubbleDuration, customDuration));
         menu.Items.Add(duration);
-        var refresh = new MenuItem { Header = Local("额度刷新间隔（自动模式）", "Refresh interval (automatic mode)", "更新間隔（自動モード）"), IsEnabled = settings.QuotaNetworkMode == "automatic" };
-        foreach (var seconds in new[] { 15, 30, 60, 120, 300 })
-            refresh.Items.Add(Item(seconds + Local(" 秒", " seconds", " 秒"), () => SetRefreshInterval(seconds), settings.RefreshIntervalSeconds == seconds));
-        refresh.Items.Add(new Separator());
-        refresh.Items.Add(Item(Local("自定义…", "Custom…", "カスタム…") + " (" + settings.RefreshIntervalSeconds + "s)", ConfigureRefreshInterval));
-        menu.Items.Add(refresh);
-        menu.Items.Add(Item(Local("额度重置提醒", "Quota reset reminders", "利用枠リセット通知"), () =>
-        {
-            settings = settings with { QuotaResetNotifications = !settings.QuotaResetNotifications };
-            if (!settings.QuotaResetNotifications) { resetReminder?.Close(); resetReminder = null; }
-            Save();
-        }, settings.QuotaResetNotifications));
         menu.Items.Add(Item(Local("减少动画", "Reduce motion", "アニメーションを減らす"), () => { settings = settings with { ReducedMotion = !settings.ReducedMotion }; Save(); }, settings.ReducedMotion));
-        menu.Items.Add(Item(Local("联网刷新额度", "Refresh quota online", "通信して利用枠を更新"), () => _ = quota.RefreshAsync(true)));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(BuildQuotaSettingsMenu(localQuotaMonitor?.Stats));
+        menu.Items.Add(new Separator());
         menu.Items.Add(Item(Local("重置位置", "Reset position", "位置をリセット"), () => { settings = settings with { OffsetX = 0, OffsetY = 0 }; Save(); }));
         menu.Items.Add(Item(Local("开机启动", "Start with Windows", "Windows 起動時に実行"), ToggleStartup, settings.Startup));
         menu.Items.Add(new Separator()); menu.Items.Add(Item(Local("退出", "Exit", "終了"), () => Application.Current.Shutdown()));

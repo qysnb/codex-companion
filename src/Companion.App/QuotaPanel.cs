@@ -89,7 +89,7 @@ internal sealed class QuotaPanel : StackPanel
         Footer.Text = snapshot.UpdatedAt is { } updated ? Text("读取于 ", "Read at ", "取得日時 ") + updated.ToLocalTime().ToString("MM-dd HH:mm:ss")
             : snapshot.Status == QuotaStatus.NotLoggedIn ? Text("请先在 Codex 登录 ChatGPT 账户。", "Sign in to ChatGPT in Codex.", "Codex で ChatGPT にログインしてください。") : Text("读取于 —", "Read at —", "取得日時 —");
         Footer.Foreground = foreground;
-        ToolTip = settings.QuotaNetworkMode == "local" ? Text("本地模式优先同步宿主新额度事件。没有新事件时保留原读取时间；也可右键“联网刷新额度”。", "Local mode follows new host quota events; otherwise the original read time is retained. Refresh quota online is available from the context menu.", "ホストの新しい利用枠イベントと同期します。イベントがなければ元の取得日時を保持します。右クリックから通信更新も可能です。") : null;
+        ToolTip = settings.QuotaNetworkMode == "local" ? Text("本地模式优先同步宿主新额度事件。没有新事件时保留原读取时间；也可在“额度设置”中选择“联网刷新一次”。", "Local mode follows new host quota events; otherwise the original read time is retained. Refresh online once is available under Quota settings.", "ホストの新しい利用枠イベントと同期します。イベントがなければ元の取得日時を保持します。「利用枠の設定」から一度オンライン更新も可能です。") : null;
         return string.Join("|", FiveHour.Labels.Concat(Weekly.Labels).Select(label => label.Text)) + FiveHour.ResetSuffix.Text + Weekly.ResetSuffix.Text + Footer.Text;
     }
 }
