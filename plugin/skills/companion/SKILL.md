@@ -28,7 +28,7 @@ The app accepts only these fixed values. A stopped get-status or hide returns an
 
 ## Network policy
 
-Version0.6.1 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh online once. An explicit request for a fresh online reading permits one refresh-quota call.
+Version0.6.2 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh online once. An explicit request for a fresh online reading permits one refresh-quota call.
 
 The user can select the online supplement mode under right-click → Quota settings → Online supplements:
 
@@ -40,7 +40,9 @@ Changing the interval does not enable automatic mode. Status includes `quotaNetw
 
 Local event subscription is enabled by default and can be disabled under Quota settings → Automatic local sync. It reads only quota events from CODEX_HOME/sessions, does not replay pre-attachment quota, does not parse or output message bodies, and does not query the network. Auth-file metadata changes invalidate the cache; credential contents are never read. Internal event formats can change. Do not repeatedly call get_usage_limits or refresh-quota to simulate a subscription. No host event means no new quota knowledge.
 
-Status includes quotaSource (local-session/app-server/none), localQuotaSync, and localQuotaSubscription statistics. A local-session snapshot is an observed host event, not a verified account identity; do not claim it is an account-verified online read or that it can produce account-verified reset reminders. Whole snapshots remain separate across sources.
+Local sync interval is configured under Quota settings → Local sync interval, independently of online supplements. Default is event-driven Immediate, not a zero-delay polling loop. Fixed intervals coalesce notifications and deliver the newest snapshot only. Custom seconds: 0 for immediate, or0.1–3600 with up to three decimal places. Changes apply to the existing subscription and persist. This does not generate online requests.
+
+Status includes localQuotaSyncIntervalMs (0=immediate) and quotaSource (local-session/app-server/none), localQuotaSync, and localQuotaSubscription statistics. A local-session snapshot is an observed host event, not a verified account identity; do not claim it is an account-verified online read or that it can produce account-verified reset reminders. Whole snapshots remain separate across sources.
 
 ## Reporting quota
 

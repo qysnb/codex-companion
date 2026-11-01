@@ -13,12 +13,27 @@ internal sealed partial class CompanionWindow
     }
     string RefreshIntervalLabel(int seconds) => seconds % 60 == 0
         ? seconds / 60 + Local(" 分钟", " min", " 分") : seconds + Local(" 秒", " sec", " 秒");
+    string LocalSyncIntervalLabel(int milliseconds) => milliseconds == 0 ? Local("即时（推荐）", "Immediate (recommended)", "即時（推奨）")
+        : milliseconds % 1000 == 0 ? RefreshIntervalLabel(milliseconds / 1000)
+        : (milliseconds / 1000m).ToString("0.###", System.Globalization.CultureInfo.CurrentCulture) + Local(" 秒", " sec", " 秒");
 
     MenuItem BuildQuotaSettingsMenu(LocalQuotaMonitorStats? subscription)
     {
         var menu = SettingsItem(Local("额度设置", "Quota settings", "利用枠の設定"), "quota-settings");
         menu.Items.Add(SettingsItem(Local("本地自动同步", "Automatic local sync", "ローカル自動同期"), "local-sync", ToggleLocalQuotaSync, settings.LocalQuotaSync,
             Local("跟随宿主的新额度更新，不额外联网。没有新数据时保留原值和读取时间。", "Follow new host quota updates without extra network requests. Keep the original reading and time when there is no new data.", "ホストの新しい利用枠と同期し、追加の通信は行いません。新しいデータがなければ前回の値と取得日時を保持します。")));
+        if (settings.LocalQuotaSync)
+        {
+            var interval = SettingsItem(Local("本地同步间隔 · ", "Local interval · ", "ローカル同期の間隔 · ") + LocalSyncIntervalLabel(settings.LocalQuotaSyncIntervalMs), "local-interval", hint:
+                Local("即时模式跟随新事件；固定间隔内合并更新，只读取最新额度。仅影响本地读取，不会联网。", "Immediate follows new events; fixed intervals combine updates into the newest reading. Local reads only, no network requests.", "即時は新しいイベントに追従し、固定間隔では更新を最新の値にまとめます。ローカル読取のみで通信しません。"));
+            var presets = new[] { 0, 500, 1000, 3000, 5000, 10000, 30000, 60000 };
+            foreach (var milliseconds in presets)
+                interval.Items.Add(SettingsItem(LocalSyncIntervalLabel(milliseconds), "local-interval-" + milliseconds, () => SetLocalSyncInterval(milliseconds), settings.LocalQuotaSyncIntervalMs == milliseconds));
+            interval.Items.Add(new Separator());
+            var custom = !presets.Contains(settings.LocalQuotaSyncIntervalMs);
+            interval.Items.Add(SettingsItem(Local("自定义…", "Custom…", "カスタム…") + (custom ? " (" + LocalSyncIntervalLabel(settings.LocalQuotaSyncIntervalMs) + ")" : ""), "local-interval-custom", ConfigureLocalSyncInterval, custom));
+            menu.Items.Add(interval);
+        }
         var state = !settings.LocalQuotaSync ? "paused" : subscription?.State is "unavailable" or "stopped" ? "unavailable"
             : subscription is { Readings: > 0, LastReceivedAt: not null } ? "received" : "waiting";
         var stateLabel = state switch {

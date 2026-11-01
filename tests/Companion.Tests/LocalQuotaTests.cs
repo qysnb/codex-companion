@@ -30,6 +30,7 @@ public static class LocalQuotaTests
         Require(values.Count == 3, "Oversized quota records must be skipped and framing must recover.");
         Console.WriteLine("PASS local quota header gate, native schema, original timestamps, fragmented writes and bounded record recovery");
         await MonitorReadsOnlyNewAppends();
+        await ConfigurableCadence();
     }
     static async Task MonitorReadsOnlyNewAppends()
     {
@@ -86,5 +87,57 @@ public static class LocalQuotaTests
     {
         var end = DateTime.UtcNow.AddSeconds(4);
         while (!condition()) { if (DateTime.UtcNow > end) throw new Exception("Local quota event deadline elapsed."); await Task.Delay(10); }
+    }
+    static async Task ConfigurableCadence()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "companion-local-cadence-" + Guid.NewGuid());
+        var dir = Path.Combine(root, "sessions"); Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, "rollout-cadence.jsonl"); await File.WriteAllTextAsync(file, "\n");
+        try
+        {
+            await using var source = new LocalQuotaMonitor(root) { IntervalMilliseconds = 400 };
+            foreach (var invalid in new[] { -1, 1, 99, int.MaxValue })
+            {
+                try { source.IntervalMilliseconds = invalid; throw new Exception("Invalid local cadence was accepted."); }
+                catch (ArgumentOutOfRangeException) { }
+            }
+            var values = new System.Collections.Concurrent.ConcurrentQueue<(LocalQuotaReading Reading, long Tick)>();
+            source.Reading += value => values.Enqueue((value, Environment.TickCount64));
+            await source.StartAsync(); await Until(() => source.Stats.State == "listening");
+            var now = DateTimeOffset.UtcNow;
+            var unrelated = "{\"type\":\"response_item\",\"payload\":\"" + new string('x', 1_100_000) + "\"}\n";
+            await File.AppendAllTextAsync(file, Record(now, 11) + "\n" + unrelated + Record(now.AddMilliseconds(1), 12) + "\n" + Record(now.AddMilliseconds(2), 13) + "\n");
+            await Task.Delay(120);
+            Require(values.IsEmpty, "Configured local interval must hold incoming updates instead of publishing immediately.");
+            await Until(() => values.Count >= 1);
+            Require(values.Count == 1 && values.Last().Reading.Snapshot.FiveHour?.RemainingPercent == 87,
+                "Several quota events in one local interval must produce only the newest snapshot.");
+            var firstTick = values.Last().Tick;
+            await File.AppendAllTextAsync(file, Record(DateTimeOffset.UtcNow, 14) + "\n" + Record(DateTimeOffset.UtcNow.AddMilliseconds(1), 15) + "\n");
+            await Task.Delay(120); Require(values.Count == 1, "A second file notification must not bypass the interval.");
+            await Until(() => values.Count >= 2);
+            Require(values.Count == 2 && values.Last().Tick - firstTick >= 350 && values.Last().Reading.Snapshot.FiveHour?.RemainingPercent == 85,
+                "Local batches must remain separated by the selected interval.");
+            var generation = source.Generation;
+            source.IntervalMilliseconds = 2000;
+            await File.AppendAllTextAsync(file, Record(DateTimeOffset.UtcNow, 16) + "\n");
+            await Task.Delay(150); Require(values.Count == 2, "Changing to a longer interval must take effect without restarting.");
+            var timer = System.Diagnostics.Stopwatch.StartNew(); source.IntervalMilliseconds = 0;
+            await Until(() => values.Count >= 3);
+            Require(timer.Elapsed < TimeSpan.FromSeconds(1) && source.Generation == generation, "Returning to immediate mode must wake the same subscription promptly.");
+            source.IntervalMilliseconds = 3_600_000;
+            timer.Restart(); await source.DisposeAsync();
+            Require(timer.Elapsed < TimeSpan.FromSeconds(1), "A long local interval must not delay shutdown.");
+            foreach (var value in new[] { -1, 1, 99, int.MaxValue })
+                Require(new CompanionSettings { LocalQuotaSyncIntervalMs = value }.Normalize().LocalQuotaSyncIntervalMs == 0, "Invalid persisted local cadence must recover to immediate mode.");
+            foreach (var value in new[] { 0, 100, 500, 1000, 5000, 3_600_000 })
+                Require(new CompanionSettings { LocalQuotaSyncIntervalMs = value }.Normalize().LocalQuotaSyncIntervalMs == value, "A valid local interval must survive normalization.");
+            var store = new SettingsStore(Path.Combine(root, "settings.json"));
+            store.Save(new() { LocalQuotaSyncIntervalMs = 5000, QuotaNetworkMode = "local", RefreshIntervalSeconds = 60 });
+            Require(store.Load().LocalQuotaSyncIntervalMs == 5000 && store.Load().RefreshIntervalSeconds == 60 && store.Load().QuotaNetworkMode == "local",
+                "Local interval persistence must remain independent of online preferences.");
+        }
+        finally { Directory.Delete(root, true); }
+        Console.WriteLine("PASS adjustable local cadence, newest-event coalescing, no early publication, live changes, immediate wakeup, prompt shutdown and independent persistence");
     }
 }

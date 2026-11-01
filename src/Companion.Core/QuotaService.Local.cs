@@ -40,7 +40,8 @@ public sealed partial class QuotaService
                 reading.Generation == _localGeneration && _localSnapshot?.UpdatedAt > time) return false;
             _localGeneration = reading.Generation;
             _localSnapshot = reading.Snapshot;
-            _localObservedAt = reading.ObservedAt;
+            // A delayed local batch is only as fresh as its original event.
+            _localObservedAt = time < reading.ObservedAt ? time : reading.ObservedAt;
             snapshot = CurrentSnapshot();
             // Session events have no verified account identity. Never merge them
             // with the private connection's account cache or infer reset notices.

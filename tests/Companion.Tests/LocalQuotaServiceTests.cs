@@ -53,6 +53,9 @@ public static class LocalQuotaServiceTests
         demand.AcceptLocalReading(new(Snapshot(now, 51), 300, now));
         await demand.RefreshAsync();
         Require(onDemandCalls == 0, "Fresh subscribed data must satisfy on-demand clicks without another online read.");
+        demand.AcceptLocalReading(new(Snapshot(now.AddMinutes(-30), 40), 301, now));
+        await demand.RefreshAsync();
+        Require(onDemandCalls == 1, "A delayed old event must not masquerade as fresh data and suppress a permitted supplement.");
         var automaticCalls = 0;
         await using var automatic = new QuotaService(_ => { automaticCalls++; return Task.FromResult<ICodexConnection>(new Fake()); }, () => now)
             { NetworkMode = QuotaNetworkMode.Automatic, LocalSyncEnabled = true };

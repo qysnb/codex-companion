@@ -37,6 +37,7 @@ public static class QuotaNetworkPolicyTests
             var store = new SettingsStore(path);
             File.WriteAllText(path, "{\"RefreshIntervalSeconds\":60,\"Character\":\"flash\",\"BubbleDurationSeconds\":5}");
             var migrated = store.Load();
+            Require(migrated.LocalQuotaSyncIntervalMs == 0, "Older settings must preserve event-driven immediate local sync.");
             Require(migrated.QuotaNetworkMode == "local" && migrated.RefreshIntervalSeconds == 60 && migrated.Character == "flash" && migrated.BubbleDurationSeconds == 5,
                 "Older settings must migrate to local mode without discarding unrelated choices.");
             store.Save(migrated with { QuotaNetworkMode = "on-demand" });

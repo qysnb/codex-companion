@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 namespace CodexCompanion.Core;
 
-public sealed record LocalQuotaMonitorStats(string State, int TrackedFiles, int RetainedBufferBytes, long BytesRead, long Readings, DateTimeOffset? LastReceivedAt, double? LastEventLagMs = null);
+public sealed record LocalQuotaMonitorStats(string State, int TrackedFiles, int RetainedBufferBytes, long BytesRead, long Readings, DateTimeOffset? LastReceivedAt, double? LastEventLagMs = null, int IntervalMilliseconds = 0);
 public sealed class LocalQuotaMonitor : IAsyncDisposable
 {
     public const int MaxTrackedFiles = 16;
@@ -23,6 +24,9 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
     QuotaSnapshot? last;
     DateTimeOffset? receivedAt;
     double? eventLagMs;
+    int intervalMilliseconds;
+    long intervalChangedAt;
+    LocalQuotaReading? batch;
     LocalQuotaMonitorStats stats = new("starting", 0, 0, 0, 0, null);
     sealed class Cursor(long offset, bool boundary)
     {
@@ -41,6 +45,21 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
     public event Action<long, bool>? Invalidated;
     public LocalQuotaMonitorStats Stats => Volatile.Read(ref stats);
     public long Generation => Volatile.Read(ref generation);
+    public int IntervalMilliseconds
+    {
+        get { lock (lifecycle) return intervalMilliseconds; }
+        set
+        {
+            if (value != 0 && value is < 100 or > 3_600_000) throw new ArgumentOutOfRangeException(nameof(value));
+            lock (lifecycle)
+            {
+                ObjectDisposedException.ThrowIf(disposed, this);
+                if (intervalMilliseconds == value) return;
+                intervalMilliseconds = value; intervalChangedAt = Stopwatch.GetTimestamp();
+            }
+            Wake();
+        }
+    }
     public Task StartAsync()
     {
         lock (lifecycle)
@@ -131,10 +150,11 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
         attached = true;
         return true;
     }
-    void UpdateStats(string state) => Volatile.Write(ref stats, new(state, files.Count, files.Count * 8192 + readBuffer.Length, bytesRead, readings, receivedAt, eventLagMs));
+    void UpdateStats(string state) => Volatile.Write(ref stats, new(state, files.Count, files.Count * 8192 + readBuffer.Length, bytesRead, readings, receivedAt, eventLagMs, IntervalMilliseconds));
     async Task RunAsync()
     {
         var observedGeneration = generation;
+        var lastDrain = Stopwatch.GetTimestamp();
         try
         {
             while (!stop.IsCancellationRequested)
@@ -145,6 +165,15 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
                     { watcher?.Dispose(); authWatcher?.Dispose(); watcher = authWatcher = null; }
                     if (watcher is null && !Setup()) { UpdateStats("unavailable"); await wake.WaitAsync(TimeSpan.FromSeconds(5), stop.Token); continue; }
                     if (observedGeneration != Volatile.Read(ref generation)) { observedGeneration = generation; last = null; receivedAt = null; }
+                    int interval; long changedAt;
+                    lock (lifecycle) { interval = intervalMilliseconds; changedAt = intervalChangedAt; }
+                    var wait = interval - Stopwatch.GetElapsedTime(Math.Max(lastDrain, changedAt)).TotalMilliseconds;
+                    if (interval > 0 && wait > 0)
+                    {
+                        UpdateStats("listening");
+                        await wake.WaitAsync(TimeSpan.FromMilliseconds(wait), stop.Token);
+                        continue;
+                    }
                     // Metadata recovery covers missed notifications for tracked files.
                     foreach (var path in files.Keys.ToArray())
                         lock (pendingGate) { if (pending.Count < 64 && !pending.ContainsKey(path)) pending.TryAdd(path, false); }
@@ -154,11 +183,14 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
                         // gates still reject quota events from before attachment.
                         Baseline(true);
                     }
+                    batch = null;
                     foreach (var item in pending.ToArray())
                         if (pending.TryRemove(item.Key, out var created)) await DrainAsync(item.Key, created);
+                    if (batch is { } latest) Offer(latest.Snapshot, latest.Generation);
+                    batch = null; lastDrain = Stopwatch.GetTimestamp();
                     UpdateStats("listening");
-                    await wake.WaitAsync(TimeSpan.FromSeconds(1), stop.Token);
-                    await Task.Delay(35, stop.Token);
+                    await wake.WaitAsync(TimeSpan.FromMilliseconds(interval == 0 ? 1000 : interval), stop.Token);
+                    if (IntervalMilliseconds == 0) await Task.Delay(35, stop.Token);
                 }
                 catch (Exception error) when (error is IOException or UnauthorizedAccessException)
                 { watcher?.Dispose(); authWatcher?.Dispose(); watcher = authWatcher = null; UpdateStats("unavailable"); await Task.Delay(1000, stop.Token); }
@@ -181,17 +213,25 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
             else if (created || stream.Length < cursor.Offset) { Track(path, 0); cursor = files[path]; }
             cursor.Touched = Environment.TickCount64; stream.Position = cursor.Offset;
             var budget = 1024 * 1024;
-            while (budget > 0 && !stop.IsCancellationRequested)
+            while (!stop.IsCancellationRequested)
             {
-                var count = await stream.ReadAsync(readBuffer.AsMemory(0, Math.Min(readBuffer.Length, budget)), stop.Token);
+                var count = await stream.ReadAsync(readBuffer, stop.Token);
                 if (count == 0) break;
                 var epoch = Volatile.Read(ref generation);
-                cursor.Decoder.Feed(readBuffer.AsSpan(0, count), snapshot => Offer(snapshot, epoch));
+                cursor.Decoder.Feed(readBuffer.AsSpan(0, count), snapshot => Stage(snapshot, epoch));
                 cursor.Offset += count; bytesRead += count; budget -= count;
+                if (budget <= 0) { budget = 1024 * 1024; await Task.Yield(); }
             }
-            if (stream.Length > cursor.Offset) Queue(path, false);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { files.Remove(path); }
+    }
+    void Stage(QuotaSnapshot snapshot, long epoch)
+    {
+        var now = DateTimeOffset.UtcNow;
+        if (epoch != Volatile.Read(ref generation) || snapshot.UpdatedAt is not { } time ||
+            time.UtcTicks < Volatile.Read(ref validAfter) || time > now.AddSeconds(2)) return;
+        if (batch is null || epoch > batch.Generation || epoch == batch.Generation && time >= batch.Snapshot.UpdatedAt)
+            batch = new(snapshot, epoch, now);
     }
     void Offer(QuotaSnapshot snapshot, long epoch)
     {

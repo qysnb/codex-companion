@@ -134,7 +134,7 @@ internal sealed partial class CompanionWindow : Window
         if (!useLocalEvents || !settings.LocalQuotaSync || localQuotaMonitor is not null || stopping) return;
         var home = Environment.GetEnvironmentVariable("CODEX_HOME");
         if (string.IsNullOrWhiteSpace(home)) home = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
-        localQuotaMonitor = new LocalQuotaMonitor(home);
+        localQuotaMonitor = new LocalQuotaMonitor(home) { IntervalMilliseconds = settings.LocalQuotaSyncIntervalMs };
         quota.InvalidateLocalReading(localQuotaMonitor.Generation, false);
         localQuotaMonitor.Reading += reading => quota.AcceptLocalReading(reading);
         localQuotaMonitor.Invalidated += quota.InvalidateLocalReading;
@@ -149,7 +149,20 @@ internal sealed partial class CompanionWindow : Window
         { localQuotaMonitor = null; await previous.DisposeAsync(); }
         if (controller.Bubble == BubbleKind.Quota) RenderQuota();
     }
-    void Save() { try { store.Save(settings); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { ShowMessage(Local("无法保存设置", "Settings could not be saved", "設定を保存できません"), e.GetType().Name, 7); } }
+    void SetLocalSyncInterval(int milliseconds)
+    {
+        if (stopping) return;
+        settings = (settings with { LocalQuotaSyncIntervalMs = milliseconds }).Normalize();
+        if (localQuotaMonitor is not null) localQuotaMonitor.IntervalMilliseconds = settings.LocalQuotaSyncIntervalMs;
+        Save();
+    }
+    void ConfigureLocalSyncInterval()
+    {
+        settingsDialogOpen = true;
+        try { var dialog = new LocalSyncIntervalDialog(this, settings.LocalQuotaSyncIntervalMs, settings.Language); if (dialog.ShowDialog() == true) SetLocalSyncInterval(dialog.Milliseconds); }
+        finally { settingsDialogOpen = false; }
+    }
+    void Save() { if (validationMode) return; try { store.Save(settings); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { ShowMessage(Local("无法保存设置", "Settings could not be saved", "設定を保存できません"), e.GetType().Name, 7); } }
     void LoadDialogue()
     {
         try
@@ -531,6 +544,6 @@ internal sealed partial class CompanionWindow : Window
             case "refresh-quota": _ = quota.RefreshAsync(true); break;
         }
         using var process = Process.GetCurrentProcess();
-        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, quotaSource = quota.Source, localQuotaSync = settings.LocalQuotaSync, localQuotaSubscription = localQuotaMonitor?.Stats, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
+        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, quotaSource = quota.Source, localQuotaSync = settings.LocalQuotaSync, localQuotaSyncIntervalMs = settings.LocalQuotaSyncIntervalMs, localQuotaSubscription = localQuotaMonitor?.Stats, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
     }
 }
