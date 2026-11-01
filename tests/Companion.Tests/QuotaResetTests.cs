@@ -34,7 +34,80 @@ public static class QuotaResetTests
         var settings = new CompanionSettings { QuotaResetNotifications = false };
         Check(!JsonSerializer.Deserialize<CompanionSettings>(JsonSerializer.Serialize(settings))!.Normalize().QuotaResetNotifications, "Disabled notifications must survive settings serialization.");
         Integration().GetAwaiter().GetResult();
+        LocalIntegration().GetAwaiter().GetResult();
+        SourceIsolation().GetAwaiter().GetResult();
         Console.WriteLine("PASS exact reset transitions, combined windows, sparse updates, deduplication, account isolation, default-on and persisted opt-out");
+    }
+
+    static async Task SourceIsolation()
+    {
+        var now = Now; var connection = new Connection { Used = 0 };
+        await using var service = new QuotaService(_ => Task.FromResult<ICodexConnection>(connection), () => now)
+            { NetworkMode = QuotaNetworkMode.Local, LocalSyncEnabled = true };
+        var notices = new List<QuotaResetNotice>(); service.ResetDetected += notices.Add;
+        void Send(double remaining)
+        {
+            now = now.AddSeconds(1);
+            service.AcceptLocalReading(new(Live(remaining, remaining) with { UpdatedAt = now }, 1, now));
+        }
+        Send(0); now = now.AddSeconds(1); await service.RefreshAsync(true);
+        Check(service.Source == "app-server" && notices.Count == 0, "A first online 100% must not pair with a local zero.");
+        Send(100);
+        Check(notices.Count == 0, "Returning to local sync must establish a new baseline after another source was selected.");
+        Send(0); Send(100);
+        Check(notices.Count == 1 && service.IsCurrentResetNotice(notices[0]), "Local resets must work after re-establishing the baseline.");
+        now = now.AddSeconds(1); connection.Push(100);
+        Check(service.Source == "app-server" && !service.IsCurrentResetNotice(notices[0]), "Switching to newer online data must invalidate a queued local notice.");
+        Send(100);
+        connection.Push(0);
+        Check(notices.Count == 1, "An older nonselected online source must not trigger a reminder.");
+        service.LocalSyncEnabled = false; now = now.AddSeconds(1); connection.Push(0);
+        Check(notices.Count == 1, "Online reminders must not reuse a discarded cross-source baseline.");
+        Console.WriteLine("PASS local/online baseline isolation, queued notice invalidation and nonselected-source suppression");
+    }
+
+    static async Task LocalIntegration()
+    {
+        var now = Now; var connects = 0;
+        await using var service = new QuotaService(_ => { connects++; throw new InvalidOperationException("Local reminders must not connect."); }, () => now)
+            { NetworkMode = QuotaNetworkMode.Local, LocalSyncEnabled = true };
+        var notices = new List<QuotaResetNotice>();
+        service.ResetDetected += notices.Add;
+        QuotaSnapshot Send(double? five, double? week, long generation = 1)
+        {
+            now = now.AddSeconds(1);
+            var snapshot = Live(five, week) with { UpdatedAt = now };
+            Check(service.AcceptLocalReading(new(snapshot, generation, now)), "The local fixture must be accepted.");
+            return snapshot;
+        }
+        Send(100, 100);
+        Check(notices.Count == 0, "Initial local 100% establishes a baseline without notifying.");
+        Send(0, 50); var recovered = Send(100, 50);
+        Check(notices.Count == 1 && notices[0] is { FiveHour: true, Weekly: false } && service.IsCurrentResetNotice(notices[0]),
+            "A fresh local five-hour 0% to 100% transition must dispatch a valid notice.");
+        service.AcceptLocalReading(new(recovered, 1, now.AddMilliseconds(100), true));
+        Send(100, 50);
+        Check(notices.Count == 1, "Local rereads and duplicate values must not repeat reminders.");
+        Send(0, 0); Send(100, 100);
+        Check(notices.Count == 2 && notices[1] is { FiveHour: true, Weekly: true }, "Both local windows must share one reminder.");
+        Send(0, 0); Send(null, 10); Send(100, 100);
+        Check(notices.Count == 3 && notices[2] is { FiveHour: true, Weekly: false }, "Missing windows preserve observed zero, positive intermediate values disarm it.");
+        Send(.1, 99.9); Send(100, 100);
+        Check(notices.Count == 3, "Rounded display zero must never arm local reminders.");
+        Send(0, 0); Send(100, 100, 2);
+        Check(notices.Count == 3 && !service.IsCurrentResetNotice(notices[2]), "A new local generation must discard the old baseline and queued notice.");
+        Send(0, 0, 2); service.InvalidateLocalReading(3, true); Send(100, 100, 3);
+        Check(notices.Count == 3, "An account invalidation must not join old zero with new account's 100%.");
+        Send(0, 0, 3); service.LocalSyncEnabled = false; service.LocalSyncEnabled = true; Send(100, 100, 3);
+        Check(notices.Count == 3, "Re-enabling local sync establishes a new baseline.");
+        var zero = Send(0, 0, 3);
+        service.AcceptLocalReading(new(zero with { FiveHour = Live(100, 0).FiveHour }, 3, now));
+        Check(notices.Count == 3, "Equal-timestamp records must not manufacture a reset transition.");
+        service.InvalidateLocalReading(4, false); Send(100, 100, 4);
+        Check(notices.Count == 3, "A source invalidation must discard the baseline even without an account change.");
+        await service.RefreshAsync();
+        Check(connects == 0, "Local recovery reminders must perform no network reads.");
+        Console.WriteLine("PASS local reset reminders, fresh events only, deduplication, combined windows, sparse values, generation/account invalidation and zero network reads");
     }
 
     static async Task Integration()

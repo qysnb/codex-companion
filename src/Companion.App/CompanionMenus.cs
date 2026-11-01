@@ -72,11 +72,11 @@ internal sealed partial class CompanionWindow
         }
         menu.Items.Add(SettingsItem(Local("联网刷新一次", "Refresh online once", "一度オンライン更新"), "refresh-online", () => _ = quota.RefreshAsync(true), hint:
             Local("立即向服务端请求额度，数据返回后更新。此操作需要网络。", "Request quota from the service and update when it arrives. Requires network access.", "サービスに利用枠を問い合わせ、応答後に更新します。通信が必要です。")));
-        menu.Items.Add(SettingsItem(Local("额度恢复提醒（联网确认）", "Reset reminders (online confirmation)", "リセット通知（オンライン確認）"), "quota-reminders", () => {
+        menu.Items.Add(SettingsItem(Local("额度恢复提醒", "Quota recovery reminders", "利用枠の回復通知"), "quota-reminders", () => {
             settings = settings with { QuotaResetNotifications = !settings.QuotaResetNotifications };
             if (!settings.QuotaResetNotifications) { resetReminder?.Close(); resetReminder = null; }
             Save();
-        }, settings.QuotaResetNotifications, Local("仅在联网读取确认同一账户的额度从0%恢复至100%后提醒。本地同步不会单独触发提醒。", "Notify only after an online reading confirms the same account changed from 0% to 100%. Local sync alone does not trigger a reminder.", "オンライン取得で同一アカウントの0%から100%への回復を確認した場合のみ通知します。ローカル同期のみでは通知しません。")));
+        }, settings.QuotaResetNotifications));
         return menu;
     }
 }

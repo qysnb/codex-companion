@@ -41,8 +41,13 @@ internal sealed partial class CompanionWindow
                     var expected = interval == 15 ? "interval-custom" : "interval-900";
                     if (!Find(intervalMenus[0], expected).IsChecked) throw new InvalidOperationException("Existing custom or preset interval lost its selection.");
                 }
-                if (Find(quotaMenu, "refresh-online").ToolTip is null || Find(quotaMenu, "quota-reminders").ToolTip is null)
-                    throw new InvalidOperationException("Online actions must explain their network/account scope.");
+                if (Find(quotaMenu, "refresh-online").ToolTip is null)
+                    throw new InvalidOperationException("Online refresh must explain its network scope.");
+                var reminders = Find(quotaMenu, "quota-reminders");
+                var reminderLabel = language switch { "zh-CN" => "额度恢复提醒", "ja" => "利用枠の回復通知", _ => "Quota recovery reminders" };
+                if (!Equals(reminders.Header, reminderLabel) || reminders.ToolTip is not null ||
+                    !reminders.IsCheckable || reminders.IsChecked != settings.QuotaResetNotifications)
+                    throw new InvalidOperationException("Quota recovery reminders must retain their preference without an online-only label or tooltip.");
                 if (settings != before) throw new InvalidOperationException("Opening settings changed a stored preference.");
                 scenarios++;
             }

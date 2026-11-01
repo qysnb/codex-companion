@@ -2,7 +2,7 @@ namespace CodexCompanion.Core;
 
 public sealed record QuotaResetNotice(bool FiveHour, bool Weekly);
 
-/// <summary>Observes real, account-verified readings only; no polling or inferred quota.</summary>
+/// <summary>Observes actual readings within one caller-provided scope; no polling or inferred quota.</summary>
 public sealed class QuotaResetTracker
 {
     string? _identity;

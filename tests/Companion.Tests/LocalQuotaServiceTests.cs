@@ -21,7 +21,7 @@ public static class LocalQuotaServiceTests
         now = now.AddSeconds(1);
         service.AcceptLocalReading(new(Snapshot(now, 100), 100, now));
         await service.RefreshAsync();
-        Require(connects == 0 && notices == 0, "Unverified local identities must not cause network reads or account-verified reset notices.");
+        Require(connects == 0 && notices == 1, "A new local 0% to 100% event must notify without a network read.");
         Require(!service.AcceptLocalReading(new(Snapshot(now.AddHours(-1), 99), 100, now)), "Old host events must not replace newer quota.");
         service.InvalidateLocalReading(101, true);
         Require(service.Source == "none" && service.Snapshot.FiveHour is null, "Auth metadata changes must clear old cache.");

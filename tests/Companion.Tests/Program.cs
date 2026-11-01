@@ -13,6 +13,7 @@ if (args.Length == 2 && args[0] == "--observe-local-quota" && int.TryParse(args[
     return values.IsEmpty ? 3 : 0;
 }
 if (args.Contains("--local-quota-tests")) { LocalQuotaTests.Run(); LocalQuotaServiceTests.Run(); QuotaTimestampTests.Run(); return 0; }
+if (args.Contains("--quota-reset-tests")) { QuotaResetTests.Run(); return 0; }
 if (args.Contains("--verify-failure-exit")) throw new InvalidOperationException("Controlled test failure: expected exit code 1.");
 var passed = 0;
 void Check(string name, Action test) { test(); Console.WriteLine("PASS " + name); passed++; }

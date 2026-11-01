@@ -7,6 +7,11 @@ public sealed partial class QuotaService
     long _localGeneration;
     DateTimeOffset? _localReadAt, _remoteReadAt;
     long _readSequence, _localReadSequence, _remoteReadSequence;
+    readonly QuotaResetTracker _localResetTracker = new();
+    QuotaResetNotice? _lastLocalResetNotice;
+    DateTimeOffset? _localResetDataAt;
+    void ClearLocalResetBaseline()
+    { _localResetTracker.Clear(); _lastLocalResetNotice = null; _localResetDataAt = null; }
     /// <summary>Latest successful read across sources, separate from quota data freshness.</summary>
     public DateTimeOffset? LastReadAt
     {
@@ -37,7 +42,7 @@ public sealed partial class QuotaService
             {
                 if (_disposed || _localEnabled == value) return;
                 _localEnabled = value;
-                if (!value) { _localSnapshot = null; _localObservedAt = _localReadAt = null; }
+                if (!value) { _localSnapshot = null; _localObservedAt = _localReadAt = null; ClearLocalResetBaseline(); }
                 snapshot = CurrentSnapshot();
             }
             RaiseUpdated(snapshot); Wake();
@@ -48,6 +53,7 @@ public sealed partial class QuotaService
     public bool AcceptLocalReading(LocalQuotaReading reading)
     {
         QuotaSnapshot snapshot;
+        QuotaResetNotice? notice = null;
         lock (_sync)
         {
             if (_disposed || !_localEnabled || reading.Generation < _localGeneration ||
@@ -55,6 +61,7 @@ public sealed partial class QuotaService
                 reading.Snapshot.FiveHour is null && reading.Snapshot.Weekly is null ||
                 reading.Generation == _localGeneration && _localSnapshot?.UpdatedAt > time) return false;
             if (reading.IsRecheck && (reading.Generation != _localGeneration || reading.Snapshot != _localSnapshot)) return false;
+            if (reading.Generation != _localGeneration) ClearLocalResetBaseline();
             _localGeneration = reading.Generation;
             _localSnapshot = reading.Snapshot;
             if (_localReadAt is null || reading.ObservedAt >= _localReadAt)
@@ -62,11 +69,21 @@ public sealed partial class QuotaService
             // A delayed local batch is only as fresh as its original event.
             _localObservedAt = time < reading.ObservedAt ? time : reading.ObservedAt;
             snapshot = CurrentSnapshot();
-            // Session events have no verified account identity. Never merge them
-            // with the private connection's account cache or infer reset notices.
-            if (LocalPreferred()) { _resetTracker.Clear(); _lastResetNotice = null; }
+            // Keep the local subscription baseline separate from verified online
+            // accounts. Rereading an old record never observes another transition.
+            if (LocalPreferred())
+            {
+                _resetTracker.Clear(); _lastResetNotice = null;
+                if (!reading.IsRecheck && (_localResetDataAt is null || time > _localResetDataAt))
+                {
+                    _localResetDataAt = time;
+                    notice = _localResetTracker.Observe("local-subscription", reading.Snapshot);
+                    if (notice is not null) _lastLocalResetNotice = notice;
+                }
+            }
+            else ClearLocalResetBaseline();
         }
-        RaiseUpdated(snapshot); Wake(); return true;
+        RaiseUpdated(snapshot); RaiseReset(notice); Wake(); return true;
     }
     public void InvalidateLocalReading(long generation, bool accountChanged)
     {
@@ -75,6 +92,7 @@ public sealed partial class QuotaService
         {
             if (_disposed || generation < _localGeneration) return;
             _localGeneration = generation; _localSnapshot = null; _localObservedAt = _localReadAt = null;
+            ClearLocalResetBaseline();
             if (accountChanged)
             {
                 _accountEpoch++; _quotaRevision++; _accountIdentity = null; _accountKnownOnConnection = false;

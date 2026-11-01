@@ -37,7 +37,7 @@ public sealed partial class QuotaService : IAsyncDisposable
     public event Action<QuotaSnapshot>? Updated;
     public event Action<QuotaResetNotice>? ResetDetected;
     public bool IsCurrentResetNotice(QuotaResetNotice notice)
-    { lock (_sync) return !_disposed && !LocalPreferred() && ReferenceEquals(_lastResetNotice, notice); }
+    { lock (_sync) return !_disposed && ReferenceEquals(LocalPreferred() ? _lastLocalResetNotice : _lastResetNotice, notice); }
 
     public QuotaService(Func<CancellationToken, Task<ICodexConnection>>? connect = null, Func<DateTimeOffset>? clock = null)
     {
@@ -349,11 +349,13 @@ public sealed partial class QuotaService : IAsyncDisposable
     { try { await SafeDisposeAsync(await connecting.ConfigureAwait(false)).ConfigureAwait(false); } catch { } }
 
     void ClearKnownQuota()
-    { _lastKnownQuota = null; _lastKnownIdentity = null; _remoteReadAt = null; _remoteReadSequence = 0; _resetTracker.Clear(); _lastResetNotice = null; }
+    { _lastKnownQuota = null; _lastKnownIdentity = null; _remoteReadAt = null; _remoteReadSequence = 0; _resetTracker.Clear(); _lastResetNotice = null; ClearLocalResetBaseline(); }
     QuotaResetNotice? RememberQuota(QuotaSnapshot snapshot)
     {
         if (snapshot.Status == QuotaStatus.Live && _accountIdentity is not null)
         { _lastKnownQuota = snapshot; _lastKnownIdentity = _accountIdentity; }
+        if (LocalPreferred()) { _resetTracker.Clear(); _lastResetNotice = null; return null; }
+        ClearLocalResetBaseline();
         var notice = _resetTracker.Observe(_accountIdentity, snapshot);
         if (notice is not null) _lastResetNotice = notice;
         return notice;
