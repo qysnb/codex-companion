@@ -5,9 +5,25 @@ public sealed partial class QuotaService
     QuotaSnapshot? _localSnapshot;
     DateTimeOffset? _localObservedAt;
     long _localGeneration;
+    DateTimeOffset? _localReadAt, _remoteReadAt;
+    long _readSequence, _localReadSequence, _remoteReadSequence;
+    /// <summary>Latest successful read across sources, separate from quota data freshness.</summary>
+    public DateTimeOffset? LastReadAt
+    {
+        get
+        {
+            lock (_sync)
+            {
+                var local = _localEnabled && _localSnapshot is not null ? _localReadAt : null;
+                var remote = _snapshot.FiveHour is not null || _snapshot.Weekly is not null ? _remoteReadAt : null;
+                return local is null ? remote : remote is null || local >= remote ? local : remote;
+            }
+        }
+    }
     QuotaSnapshot CurrentSnapshot()
         => _localEnabled && _localSnapshot is { UpdatedAt: { } timestamp } local &&
-            (_snapshot.FiveHour is null && _snapshot.Weekly is null || _snapshot.UpdatedAt is null || timestamp >= _snapshot.UpdatedAt)
+            (_snapshot.FiveHour is null && _snapshot.Weekly is null || _snapshot.UpdatedAt is null || timestamp > _snapshot.UpdatedAt ||
+                timestamp == _snapshot.UpdatedAt && (_localReadAt > _remoteReadAt || _localReadAt == _remoteReadAt && _localReadSequence > _remoteReadSequence))
             ? local : _snapshot;
     bool LocalPreferred() => _localSnapshot is not null && ReferenceEquals(CurrentSnapshot(), _localSnapshot);
     bool LocalFresh(DateTimeOffset now) => LocalPreferred() && _localObservedAt is { } observed && now < observed + _refreshInterval;
@@ -21,7 +37,7 @@ public sealed partial class QuotaService
             {
                 if (_disposed || _localEnabled == value) return;
                 _localEnabled = value;
-                if (!value) { _localSnapshot = null; _localObservedAt = null; }
+                if (!value) { _localSnapshot = null; _localObservedAt = _localReadAt = null; }
                 snapshot = CurrentSnapshot();
             }
             RaiseUpdated(snapshot); Wake();
@@ -38,8 +54,11 @@ public sealed partial class QuotaService
                 reading.Snapshot.Status != QuotaStatus.Live || reading.Snapshot.UpdatedAt is not { } time ||
                 reading.Snapshot.FiveHour is null && reading.Snapshot.Weekly is null ||
                 reading.Generation == _localGeneration && _localSnapshot?.UpdatedAt > time) return false;
+            if (reading.IsRecheck && (reading.Generation != _localGeneration || reading.Snapshot != _localSnapshot)) return false;
             _localGeneration = reading.Generation;
             _localSnapshot = reading.Snapshot;
+            if (_localReadAt is null || reading.ObservedAt >= _localReadAt)
+            { _localReadAt = reading.ObservedAt; _localReadSequence = ++_readSequence; }
             // A delayed local batch is only as fresh as its original event.
             _localObservedAt = time < reading.ObservedAt ? time : reading.ObservedAt;
             snapshot = CurrentSnapshot();
@@ -55,7 +74,7 @@ public sealed partial class QuotaService
         lock (_sync)
         {
             if (_disposed || generation < _localGeneration) return;
-            _localGeneration = generation; _localSnapshot = null; _localObservedAt = null;
+            _localGeneration = generation; _localSnapshot = null; _localObservedAt = _localReadAt = null;
             if (accountChanged)
             {
                 _accountEpoch++; _quotaRevision++; _accountIdentity = null; _accountKnownOnConnection = false;
@@ -68,5 +87,10 @@ public sealed partial class QuotaService
             snapshot = CurrentSnapshot();
         }
         RaiseUpdated(snapshot); Wake();
+    }
+    void MarkRemoteRead(QuotaSnapshot snapshot)
+    {
+        if (snapshot.Status == QuotaStatus.Live && (snapshot.FiveHour is not null || snapshot.Weekly is not null))
+        { _remoteReadAt = _clock(); _remoteReadSequence = ++_readSequence; }
     }
 }

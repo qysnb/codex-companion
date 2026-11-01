@@ -7,12 +7,12 @@ if (args.Length == 2 && args[0] == "--observe-local-quota" && int.TryParse(args[
     var home = Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
     await using var source = new LocalQuotaMonitor(home);
     var values = new System.Collections.Concurrent.ConcurrentQueue<LocalQuotaReading>();
-    source.Reading += reading => { values.Enqueue(reading); Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { source = "local-session", observedAt = reading.ObservedAt, snapshot = reading.Snapshot })); };
+    source.Reading += reading => { if (!reading.IsRecheck) { values.Enqueue(reading); Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { source = "local-session", observedAt = reading.ObservedAt, snapshot = reading.Snapshot })); } };
     await source.StartAsync(); await Task.Delay(TimeSpan.FromSeconds(observeSeconds));
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { realHostEventCount = values.Count, statistics = source.Stats }));
     return values.IsEmpty ? 3 : 0;
 }
-if (args.Contains("--local-quota-tests")) { LocalQuotaTests.Run(); LocalQuotaServiceTests.Run(); return 0; }
+if (args.Contains("--local-quota-tests")) { LocalQuotaTests.Run(); LocalQuotaServiceTests.Run(); QuotaTimestampTests.Run(); return 0; }
 if (args.Contains("--verify-failure-exit")) throw new InvalidOperationException("Controlled test failure: expected exit code 1.");
 var passed = 0;
 void Check(string name, Action test) { test(); Console.WriteLine("PASS " + name); passed++; }
@@ -73,6 +73,7 @@ QuotaDeadlineTests.Run();
 QuotaNetworkPolicyTests.Run();
 LocalQuotaTests.Run();
 LocalQuotaServiceTests.Run();
+QuotaTimestampTests.Run();
 return 0;
 }
 catch (Exception error)

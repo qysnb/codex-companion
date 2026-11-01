@@ -416,7 +416,7 @@ internal sealed partial class CompanionWindow : Window
     void RenderQuota()
     {
         // Keep status/reconnect work silent; this string is only the sizing cache key.
-        bubbleText.Text = quotaPanel.Update(quota.Snapshot, settings);
+        bubbleText.Text = quotaPanel.Update(quota.Snapshot, settings, quota.LastReadAt);
         bubbleTitle.Text = "";
         UpdateWindowSize();
     }
@@ -544,6 +544,6 @@ internal sealed partial class CompanionWindow : Window
             case "refresh-quota": _ = quota.RefreshAsync(true); break;
         }
         using var process = Process.GetCurrentProcess();
-        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, quotaSource = quota.Source, localQuotaSync = settings.LocalQuotaSync, localQuotaSyncIntervalMs = settings.LocalQuotaSyncIntervalMs, localQuotaSubscription = localQuotaMonitor?.Stats, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
+        return Task.FromResult<object>(new { ok = true, version = typeof(CompanionWindow).Assembly.GetName().Version?.ToString(3), visible = IsVisible, codexVisible = target is not null, character = settings.Character, displayName = CharacterName(settings.Character), language = settings.Language, size = settings.Size, displayHeight, reducedMotion = settings.ReducedMotion, startup = settings.Startup, refreshIntervalSeconds = settings.RefreshIntervalSeconds, quotaNetworkMode = settings.QuotaNetworkMode, quotaSource = quota.Source, quotaReadAt = quota.LastReadAt, localQuotaSync = settings.LocalQuotaSync, localQuotaSyncIntervalMs = settings.LocalQuotaSyncIntervalMs, localQuotaSubscription = localQuotaMonitor?.Stats, bubbleDurationSeconds = settings.BubbleDurationSeconds, quotaResetNotifications = settings.QuotaResetNotifications, referencePreview = artPreview, expression = expressionIndex switch { 1 => "greeting", 2 => "quota", _ => "idle" }, transitioning = expressionStarted is not null, lastQuotaDisplayMs, position = lastPlacement, bubblePosition = lastBubblePlacement, quota = quota.Snapshot, memory = new { workingSetMB = Math.Round(process.WorkingSet64 / 1048576d, 1), privateMB = Math.Round(process.PrivateMemorySize64 / 1048576d, 1), decodedFrames = artFrames?.Distinct().Count() ?? 0, retainedArtBytes = RetainedArtBytes } });
     }
 }

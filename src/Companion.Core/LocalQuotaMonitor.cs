@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 namespace CodexCompanion.Core;
 
-public sealed record LocalQuotaMonitorStats(string State, int TrackedFiles, int RetainedBufferBytes, long BytesRead, long Readings, DateTimeOffset? LastReceivedAt, double? LastEventLagMs = null, int IntervalMilliseconds = 0);
+public sealed record LocalQuotaMonitorStats(string State, int TrackedFiles, int RetainedBufferBytes, long BytesRead, long Readings, DateTimeOffset? LastReceivedAt, double? LastEventLagMs = null, int IntervalMilliseconds = 0, DateTimeOffset? LastReadAt = null, long Rechecks = 0);
 public sealed class LocalQuotaMonitor : IAsyncDisposable
 {
     public const int MaxTrackedFiles = 16;
@@ -27,13 +27,19 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
     int intervalMilliseconds;
     long intervalChangedAt;
     LocalQuotaReading? batch;
+    RecordBookmark? batchRecord, lastRecord;
+    DateTimeOffset? readAt;
+    long rechecks;
+    long cursorCounter;
+    sealed record RecordBookmark(string Path, long CursorIdentity, long Offset, int Length, QuotaSnapshot Snapshot, long Generation);
     LocalQuotaMonitorStats stats = new("starting", 0, 0, 0, 0, null);
-    sealed class Cursor(long offset, bool boundary)
+    sealed class Cursor(long offset, bool boundary, long identity)
     {
+        internal readonly long Identity = identity;
         internal long Offset = offset;
         internal long Touched = Environment.TickCount64;
-        internal readonly LocalQuotaDecoder Decoder = Create(boundary);
-        static LocalQuotaDecoder Create(bool boundary) { var decoder = new LocalQuotaDecoder(); decoder.Reset(!boundary); return decoder; }
+        internal readonly LocalQuotaDecoder Decoder = Create(offset, boundary);
+        static LocalQuotaDecoder Create(long offset, bool boundary) { var decoder = new LocalQuotaDecoder(); decoder.Seek(offset, !boundary); return decoder; }
     }
     public LocalQuotaMonitor(string home)
     {
@@ -113,7 +119,7 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
         {
             using var stream = Open(path); stream.Position = offset - 1; boundary = stream.ReadByte() == '\n';
         }
-        files[path] = new(offset, boundary);
+        files[path] = new(offset, boundary, ++cursorCounter);
     }
     static FileStream Open(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
     void Baseline(bool recovery = false)
@@ -150,7 +156,7 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
         attached = true;
         return true;
     }
-    void UpdateStats(string state) => Volatile.Write(ref stats, new(state, files.Count, files.Count * 8192 + readBuffer.Length, bytesRead, readings, receivedAt, eventLagMs, IntervalMilliseconds));
+    void UpdateStats(string state) => Volatile.Write(ref stats, new(state, files.Count, files.Count * 8192 + readBuffer.Length, bytesRead, readings, receivedAt, eventLagMs, IntervalMilliseconds, readAt, rechecks));
     async Task RunAsync()
     {
         var observedGeneration = generation;
@@ -164,7 +170,7 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
                     if (Interlocked.Exchange(ref reopen, 0) != 0)
                     { watcher?.Dispose(); authWatcher?.Dispose(); watcher = authWatcher = null; }
                     if (watcher is null && !Setup()) { UpdateStats("unavailable"); await wake.WaitAsync(TimeSpan.FromSeconds(5), stop.Token); continue; }
-                    if (observedGeneration != Volatile.Read(ref generation)) { observedGeneration = generation; last = null; receivedAt = null; }
+                    if (observedGeneration != Volatile.Read(ref generation)) { observedGeneration = generation; last = null; receivedAt = readAt = null; lastRecord = null; }
                     int interval; long changedAt;
                     lock (lifecycle) { interval = intervalMilliseconds; changedAt = intervalChangedAt; }
                     var wait = interval - Stopwatch.GetElapsedTime(Math.Max(lastDrain, changedAt)).TotalMilliseconds;
@@ -183,11 +189,13 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
                         // gates still reject quota events from before attachment.
                         Baseline(true);
                     }
-                    batch = null;
+                    batch = null; batchRecord = null;
                     foreach (var item in pending.ToArray())
                         if (pending.TryRemove(item.Key, out var created)) await DrainAsync(item.Key, created);
-                    if (batch is { } latest) Offer(latest.Snapshot, latest.Generation);
-                    batch = null; lastDrain = Stopwatch.GetTimestamp();
+                    if (batch is { } latest)
+                    { if (Offer(latest.Snapshot, latest.Generation, false)) lastRecord = batchRecord; }
+                    else await RecheckAsync();
+                    batch = null; batchRecord = null; lastDrain = Stopwatch.GetTimestamp();
                     UpdateStats("listening");
                     await wake.WaitAsync(TimeSpan.FromMilliseconds(interval == 0 ? 1000 : interval), stop.Token);
                     if (IntervalMilliseconds == 0) await Task.Delay(35, stop.Token);
@@ -218,30 +226,57 @@ public sealed class LocalQuotaMonitor : IAsyncDisposable
                 var count = await stream.ReadAsync(readBuffer, stop.Token);
                 if (count == 0) break;
                 var epoch = Volatile.Read(ref generation);
-                cursor.Decoder.Feed(readBuffer.AsSpan(0, count), snapshot => Stage(snapshot, epoch));
+                cursor.Decoder.Feed(readBuffer.AsSpan(0, count), snapshot => Stage(snapshot, epoch, path, cursor));
                 cursor.Offset += count; bytesRead += count; budget -= count;
                 if (budget <= 0) { budget = 1024 * 1024; await Task.Yield(); }
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { files.Remove(path); }
     }
-    void Stage(QuotaSnapshot snapshot, long epoch)
+    void Stage(QuotaSnapshot snapshot, long epoch, string path, Cursor cursor)
     {
         var now = DateTimeOffset.UtcNow;
         if (epoch != Volatile.Read(ref generation) || snapshot.UpdatedAt is not { } time ||
             time.UtcTicks < Volatile.Read(ref validAfter) || time > now.AddSeconds(2)) return;
         if (batch is null || epoch > batch.Generation || epoch == batch.Generation && time >= batch.Snapshot.UpdatedAt)
+        {
             batch = new(snapshot, epoch, now);
+            batchRecord = new(path, cursor.Identity, cursor.Decoder.LastRecordOffset, cursor.Decoder.LastRecordLength, snapshot, epoch);
+        }
     }
-    void Offer(QuotaSnapshot snapshot, long epoch)
+    async Task RecheckAsync()
+    {
+        var record = lastRecord;
+        if (record is null || record.Generation != Volatile.Read(ref generation)) return;
+        if (!files.TryGetValue(record.Path, out var cursor) || cursor.Identity != record.CursorIdentity) { lastRecord = null; return; }
+        if (!SafePath(record.Path)) return;
+        try
+        {
+            using var stream = Open(record.Path);
+            if (record.Length is <= 0 or > 8192 || stream.Length <= record.Offset + record.Length) return;
+            stream.Position = record.Offset;
+            await stream.ReadExactlyAsync(readBuffer.AsMemory(0, record.Length), stop.Token);
+            if (stream.ReadByte() != '\n') return;
+            var parsed = LocalQuotaRecordParser.Parse(readBuffer.AsSpan(0, record.Length));
+            if (parsed != record.Snapshot) return;
+            bytesRead += record.Length + 1; cursor.Touched = Environment.TickCount64;
+            Offer(parsed, record.Generation, true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { }
+    }
+    bool Offer(QuotaSnapshot snapshot, long epoch, bool recheck)
     {
         var now = DateTimeOffset.UtcNow;
         if (stop.IsCancellationRequested || epoch != Volatile.Read(ref generation) || snapshot.UpdatedAt is not { } time ||
             time.UtcTicks < Volatile.Read(ref validAfter) || time > now.AddSeconds(2) ||
-            last?.UpdatedAt > time || last == snapshot) return;
-        last = snapshot; receivedAt = now; eventLagMs = Math.Round(Math.Max(0, (now - time).TotalMilliseconds), 1); readings++;
+            last?.UpdatedAt > time) return false;
+        recheck |= last == snapshot;
+        if (!recheck) { last = snapshot; receivedAt = now; eventLagMs = Math.Round(Math.Max(0, (now - time).TotalMilliseconds), 1); readings++; }
+        else rechecks++;
+        readAt = now;
         foreach (var callback in Reading?.GetInvocationList() ?? [])
-            try { ((Action<LocalQuotaReading>)callback)(new(snapshot, epoch, now)); } catch { }
+            try { ((Action<LocalQuotaReading>)callback)(new(snapshot, epoch, now, recheck)); } catch { }
+        return true;
     }
     public async ValueTask DisposeAsync()
     {

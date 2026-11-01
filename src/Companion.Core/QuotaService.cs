@@ -349,7 +349,7 @@ public sealed partial class QuotaService : IAsyncDisposable
     { try { await SafeDisposeAsync(await connecting.ConfigureAwait(false)).ConfigureAwait(false); } catch { } }
 
     void ClearKnownQuota()
-    { _lastKnownQuota = null; _lastKnownIdentity = null; _resetTracker.Clear(); _lastResetNotice = null; }
+    { _lastKnownQuota = null; _lastKnownIdentity = null; _remoteReadAt = null; _remoteReadSequence = 0; _resetTracker.Clear(); _lastResetNotice = null; }
     QuotaResetNotice? RememberQuota(QuotaSnapshot snapshot)
     {
         if (snapshot.Status == QuotaStatus.Live && _accountIdentity is not null)
@@ -385,6 +385,7 @@ public sealed partial class QuotaService : IAsyncDisposable
             if (_disposed || epoch != _accountEpoch || revision is not null && revision != _quotaRevision) return;
             ObserveElapsedResets(_clock());
             _snapshot = snapshot;
+            if (success) MarkRemoteRead(snapshot);
             notice = RememberQuota(snapshot);
             if (success)
             {
@@ -460,6 +461,7 @@ public sealed partial class QuotaService : IAsyncDisposable
                     _quotaRevision++;
                     changed = _snapshot = new(QuotaStatus.Live, parsed.FiveHour ?? _snapshot.FiveHour,
                         parsed.Weekly ?? _snapshot.Weekly, _clock());
+                    MarkRemoteRead(changed);
                     notice = RememberQuota(changed);
                     _lastSuccess = _clock();
                     TrackResets(_snapshot);

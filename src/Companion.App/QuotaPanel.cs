@@ -52,7 +52,7 @@ internal sealed class QuotaPanel : StackPanel
     (string FiveHour, string Weekly)? suffixText;
     SolidColorBrush foreground = Brushes.Black, accent = Brushes.Transparent;
     internal QuotaPanel() { Children.Add(FiveHour); Children.Add(Weekly); Children.Add(Footer); }
-    internal string Update(QuotaSnapshot snapshot, CompanionSettings settings)
+    internal string Update(QuotaSnapshot snapshot, CompanionSettings settings, DateTimeOffset? readAt = null)
     {
         string Text(string zh, string en, string ja) => settings.Language switch { "en" => en, "ja" => ja, _ => zh };
         if (textColor != settings.QuotaTextColor)
@@ -86,10 +86,12 @@ internal sealed class QuotaPanel : StackPanel
             FiveHour.ResetSuffix.Width = Weekly.ResetSuffix.Width = Math.Max(FiveHour.ResetSuffix.DesiredSize.Width, Weekly.ResetSuffix.DesiredSize.Width);
             suffixText = suffixes;
         }
-        Footer.Text = snapshot.UpdatedAt is { } updated ? Text("读取于 ", "Read at ", "取得日時 ") + updated.ToLocalTime().ToString("MM-dd HH:mm:ss")
+        Footer.Text = (readAt ?? snapshot.UpdatedAt) is { } updated ? Text("读取于 ", "Read at ", "取得日時 ") + updated.ToLocalTime().ToString("MM-dd HH:mm:ss")
             : snapshot.Status == QuotaStatus.NotLoggedIn ? Text("请先在 Codex 登录 ChatGPT 账户。", "Sign in to ChatGPT in Codex.", "Codex で ChatGPT にログインしてください。") : Text("读取于 —", "Read at —", "取得日時 —");
         Footer.Foreground = foreground;
-        ToolTip = settings.QuotaNetworkMode == "local" ? Text("本地模式优先同步宿主新额度事件。没有新事件时保留原读取时间；也可在“额度设置”中选择“联网刷新一次”。", "Local mode follows new host quota events; otherwise the original read time is retained. Refresh online once is available under Quota settings.", "ホストの新しい利用枠イベントと同期します。イベントがなければ元の取得日時を保持します。「利用枠の設定」から一度オンライン更新も可能です。") : null;
+        Footer.ToolTip = snapshot.UpdatedAt is { } dataTime ? Text("额度数据时间：", "Quota data time: ", "利用枠データの日時：") + dataTime.ToLocalTime().ToString("MM-dd HH:mm:ss") + "\n" +
+            Text("“读取于”表示最近一次成功读取本地额度记录或收到联网结果的时间，不代表云端数据在此刻发生变化。", "Read at is the most recent successful local record read or online result. It does not mean the cloud quota changed at that time.", "取得日時はローカル記録の読取またはオンライン結果の受信に成功した時刻です。その時点でクラウドの利用枠が変化したことを意味しません。") : null;
+        ToolTip = settings.QuotaNetworkMode == "local" ? Text("本地模式会同步新事件并定期复核已有额度记录；读取时间随成功读取更新。可在“额度设置”中选择“联网刷新一次”。", "Local mode follows new events and periodically rereads the quota record. Successful reads update the read time. Refresh online once is available under Quota settings.", "新しいイベントと同期し、既存の利用枠記録も定期的に再読取します。成功時に取得日時を更新します。「利用枠の設定」から一度オンライン更新も可能です。") : null;
         return string.Join("|", FiveHour.Labels.Concat(Weekly.Labels).Select(label => label.Text)) + FiveHour.ResetSuffix.Text + Weekly.ResetSuffix.Text + Footer.Text;
     }
 }

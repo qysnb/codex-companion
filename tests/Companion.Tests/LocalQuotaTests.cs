@@ -46,7 +46,7 @@ public static class LocalQuotaTests
             await using var source = new LocalQuotaMonitor(root);
             var readings = new System.Collections.Concurrent.ConcurrentQueue<LocalQuotaReading>();
             var invalidated = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
-            source.Reading += readings.Enqueue;
+            source.Reading += reading => { if (!reading.IsRecheck) readings.Enqueue(reading); };
             source.Invalidated += (generation, accountChanged) => { if (accountChanged) invalidated.TrySetResult(generation); };
             await source.StartAsync();
             await Until(() => source.Stats.State == "listening");
@@ -102,7 +102,7 @@ public static class LocalQuotaTests
                 catch (ArgumentOutOfRangeException) { }
             }
             var values = new System.Collections.Concurrent.ConcurrentQueue<(LocalQuotaReading Reading, long Tick)>();
-            source.Reading += value => values.Enqueue((value, Environment.TickCount64));
+            source.Reading += value => { if (!value.IsRecheck) values.Enqueue((value, Environment.TickCount64)); };
             await source.StartAsync(); await Until(() => source.Stats.State == "listening");
             var now = DateTimeOffset.UtcNow;
             var unrelated = "{\"type\":\"response_item\",\"payload\":\"" + new string('x', 1_100_000) + "\"}\n";

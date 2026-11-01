@@ -1,7 +1,7 @@
 using System.Text.Json;
 namespace CodexCompanion.Core;
 
-public sealed record LocalQuotaReading(QuotaSnapshot Snapshot, long Generation, DateTimeOffset ObservedAt);
+public sealed record LocalQuotaReading(QuotaSnapshot Snapshot, long Generation, DateTimeOffset ObservedAt, bool IsRecheck = false);
 public static class LocalQuotaRecordParser
 {
     // Inspect only the fixed envelope before permitting JSON deserialization.
@@ -71,6 +71,10 @@ public sealed class LocalQuotaDecoder
     readonly byte[] buffer = new byte[8192];
     int length;
     bool candidate, discard;
+    long position, lineStart;
+    internal long LastRecordOffset { get; private set; }
+    internal int LastRecordLength { get; private set; }
+    internal void Seek(long offset, bool skipPartial) { position = lineStart = offset; Reset(skipPartial); }
     public int CapacityBytes => 8192;
     public int BufferedBytes => length;
     public void Reset(bool skipPartial = false) { length = 0; candidate = false; discard = skipPartial; }
@@ -78,10 +82,12 @@ public sealed class LocalQuotaDecoder
     {
         foreach (var b in bytes)
         {
+            position++;
             if (b == '\n')
             {
-                if (!discard && length > 0 && LocalQuotaRecordParser.Parse(buffer.AsSpan(0, length)) is { } snapshot) reading(snapshot);
-                Reset(); continue;
+                if (!discard && length > 0 && LocalQuotaRecordParser.Parse(buffer.AsSpan(0, length)) is { } snapshot)
+                { LastRecordOffset = lineStart; LastRecordLength = length; reading(snapshot); }
+                Reset(); lineStart = position; continue;
             }
             if (discard) continue;
             if (length == buffer.Length) { length = 0; discard = true; continue; }

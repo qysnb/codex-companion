@@ -69,6 +69,15 @@ internal sealed partial class CompanionWindow
             finally { localQuotaMonitor = oldMonitor; probe.DisposeAsync().GetAwaiter().GetResult(); }
             foreach (var language in CompanionSettings.Languages)
             {
+                var dataTime = DateTimeOffset.Now.AddHours(-1); var readTime = DateTimeOffset.Now;
+                var snapshot = new QuotaSnapshot(QuotaStatus.Live, new(44, 300, readTime.AddHours(2)), new(75, 10080, readTime.AddDays(4)), dataTime);
+                var panel = new QuotaPanel(); panel.Update(snapshot, saved with { Language = language }, readTime);
+                if (!panel.Footer.Text.EndsWith(readTime.ToLocalTime().ToString("MM-dd HH:mm:ss"), StringComparison.Ordinal) ||
+                    panel.Footer.Text.Contains('\n') || panel.Footer.ToolTip?.ToString()?.Contains(dataTime.ToLocalTime().ToString("MM-dd HH:mm:ss"), StringComparison.Ordinal) != true)
+                    throw new InvalidOperationException("Read footer must show successful read time and keep original data time in its tooltip.");
+            }
+            foreach (var language in CompanionSettings.Languages)
+            {
                 foreach (var state in new[] { "paused", "waiting", "received", "unavailable" })
                 {
                     settings = saved with { Language = language, LocalQuotaSync = state != "paused" };
@@ -114,7 +123,7 @@ internal sealed partial class CompanionWindow
                 var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
                 using var output = File.Create(Path.GetFullPath(previewPath)); encoder.Save(output);
             }
-            return new { menuScenarios = scenarios, syncStateScenarios = 12, customInputScenarios = 12, liveLocalIntervalBinding = true, settingsPreserved = true, previewPath };
+            return new { menuScenarios = scenarios, syncStateScenarios = 12, customInputScenarios = 12, readTimeScenarios = 3, liveLocalIntervalBinding = true, settingsPreserved = true, previewPath };
         }
         finally { settings = saved; validationMode = wasValidation; ContextMenu = null; }
     }

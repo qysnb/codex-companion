@@ -21,7 +21,7 @@ internal sealed partial class CompanionWindow
     {
         var menu = SettingsItem(Local("额度设置", "Quota settings", "利用枠の設定"), "quota-settings");
         menu.Items.Add(SettingsItem(Local("本地自动同步", "Automatic local sync", "ローカル自動同期"), "local-sync", ToggleLocalQuotaSync, settings.LocalQuotaSync,
-            Local("跟随宿主的新额度更新，不额外联网。没有新数据时保留原值和读取时间。", "Follow new host quota updates without extra network requests. Keep the original reading and time when there is no new data.", "ホストの新しい利用枠と同期し、追加の通信は行いません。新しいデータがなければ前回の値と取得日時を保持します。")));
+            Local("同步宿主新事件并复核本地额度记录，不额外联网。没有新数据时保留额度值，成功读取时更新时间。", "Follow host events and reread the local quota record without extra network requests. Keep quota values when no new data arrives and update the time after successful reads.", "ホストの新しいイベントと同期し、ローカル記録を再読取します。追加通信は行わず、データが変わらなくても読取成功時に日時を更新します。")));
         if (settings.LocalQuotaSync)
         {
             var interval = SettingsItem(Local("本地同步间隔 · ", "Local interval · ", "ローカル同期の間隔 · ") + LocalSyncIntervalLabel(settings.LocalQuotaSyncIntervalMs), "local-interval", hint:
@@ -43,9 +43,9 @@ internal sealed partial class CompanionWindow
             _ => Local("等待宿主更新", "Waiting for host updates", "ホストの更新を待機中") };
         var status = SettingsItem(Local("同步状态：", "Sync: ", "同期状態：") + stateLabel, "sync-status-" + state);
         status.IsEnabled = false; menu.Items.Add(status);
-        if (settings.LocalQuotaSync && subscription?.LastReceivedAt is { } received)
+        if (settings.LocalQuotaSync && (subscription?.LastReadAt ?? subscription?.LastReceivedAt) is { } received)
         {
-            var time = SettingsItem(Local("最近同步：", "Last sync: ", "最終同期：") + received.ToLocalTime().ToString("MM-dd HH:mm:ss"), "last-local-sync");
+            var time = SettingsItem(Local("最近读取：", "Last read: ", "最終読取：") + received.ToLocalTime().ToString("MM-dd HH:mm:ss"), "last-local-sync");
             time.IsEnabled = false; menu.Items.Add(time);
         }
         menu.Items.Add(new Separator());
