@@ -2,6 +2,9 @@
 
 ## 直接运行
 
+仓库 main 分支也提供了根目录 `CodexCompanion.exe` 及完整 `app`：可克隆仓库或在 GitHub 选择 Code → Download ZIP，解压后直接双击根目录入口，无需编译。请整体保留 `app` 文件夹。历史版本标签的 Source code ZIP 不保证包含这些运行文件。
+
+
 从 [GitHub Releases](https://github.com/qysnb/codex-companion/releases/latest) 下载运行包。请使用Release附件中的两个运行ZIP；GitHub自动生成的Source code ZIP仅包含源码，需要自行构建。程序使用普通用户权限，不经过控制台脚本。
 
 解压 `codex-companion-win-x64.zip`，双击最外层 `CodexCompanion.exe`。此包带 .NET 8 Desktop Runtime，无需开发 SDK 或管理员安装。请保留启动文件旁的 `app` 文件夹。实际程序、依赖和角色位于 `app/bin`，插件元数据与技能位于 `app`。启动器使用英文相对路径定位程序，启动后立即退出，不自解压或常驻。

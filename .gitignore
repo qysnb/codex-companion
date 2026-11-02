@@ -1,11 +1,13 @@
 **/bin/
 **/obj/
+!/app/bin/
+!/app/bin/**
 dist/
 .tmp/
-/app/
-/CodexCompanion.exe
 *.user
 *.log
+*.pdb
+*.dmp
 
 # Local inputs, generation history, scripts and workstation-only files.
 art/
