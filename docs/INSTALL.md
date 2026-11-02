@@ -4,15 +4,15 @@
 
 从 [GitHub Releases](https://github.com/qysnb/codex-companion/releases/latest) 下载运行包。请使用Release附件中的两个运行ZIP；GitHub自动生成的Source code ZIP仅包含源码，需要自行构建。程序使用普通用户权限，不经过控制台脚本。
 
-解压 `codex-companion-win-x64.zip`，双击包中 `marketplace/plugins/codex-companion/bin/CodexCompanion.exe`。此包带 .NET 8 Desktop Runtime，无需开发 SDK 或管理员安装。请保留 exe 旁边的运行时和 assets 文件夹。
+解压 `codex-companion-win-x64.zip`，双击最外层 `CodexCompanion.exe`。此包带 .NET 8 Desktop Runtime，无需开发 SDK 或管理员安装。请保留启动文件旁的 `app` 文件夹。实际程序、依赖和角色位于 `app/bin`，插件元数据与技能位于 `app`。启动器使用英文相对路径定位程序，启动后立即退出，不自解压或常驻。
 
 若使用 `codex-companion-lite-win-x64.zip`，需事先安装 .NET 8 Desktop Runtime x64，建议使用微软提供的最新安全修订版本。Lite 版磁盘包更小，运行行为相同。程序不会替你安装系统运行时。
 
-Lite 包的解压根目录名为 `marketplace-lite`；下文安装源路径相应指向这个目录。
+自包含包解压根目录为 `CodexCompanion`，Lite 为 `CodexCompanion-Lite`。两个包都在最外层双击 `CodexCompanion.exe`。目录名、运行文件名及打包路径均为英文。
 
 首次启动默认 Q 版、简体中文、240 DIP。Codex 在后台时角色自动隐藏；在 Codex 前台等待最多约 1 秒即可出现。显示区域位于客户端右下角，拖动可调整位置。
 
-当前版本0.6.6，提供Astra、Sol、Luna、Fable、Haiku、Pro、Flash，前三位的内部形象ID保持不变。待机使用闭嘴图，问候使用眯眼图，用量使用张嘴图；气泡关闭后回到待机。三张完整人物经过对齐，表情轻量过渡；左键点击时面部与身体统一压缩回弹后恢复。按住角色至少350毫秒后再拖动才会调整位置，点击、表情和气泡不改变保存位置。
+当前版本0.6.7，提供Astra、Sol、Luna、Fable、Haiku、Pro、Flash，前三位的内部形象ID保持不变。待机使用闭嘴图，问候使用眯眼图，用量使用张嘴图；气泡关闭后回到待机。三张完整人物经过对齐，表情轻量过渡；左键点击时面部与身体统一压缩回弹后恢复。按住角色至少350毫秒后再拖动才会调整位置，点击、表情和气泡不改变保存位置。
 
 右键“大小”提供小杯180、中杯240、大杯320和超大杯420逻辑像素。旧设置继续有效；默认档位不变。较小工作区会限制实际显示尺寸，额度气泡在上下空间不足时可放在侧边。
 
@@ -38,14 +38,14 @@ Lite 包的解压根目录名为 `marketplace-lite`；下文安装源路径相�
 
 额度读取超时会丢弃该临时连接。自动失败重试至少等待所设联网间隔，连续三次失败至少等待60秒；429遵守服务端Retry-After。本地和按需模式不后台重试。读取状态和重连在后台处理，气泡保留额度数据，不显示重试横幅；失败本身不推进读取时间，其他来源的成功读取仍正常更新时间。账户暂时无法验证时隐藏旧值，确认仍是原账户后才可恢复；换账户或身份不可比较时不复用旧账户缓存。
 
-HTTP请求超时上限10秒；回退App Server账户／额度请求各30秒，初始化10秒；缓存显示不等待网络，首次手动取得新数据仍可能等待数秒或更久。更新时先退出旧桌宠，将新包完整解压到单独目录后启动，原有设置会沿用，旧配置缺失的联网方式采用本地模式。
+HTTP请求超时上限10秒；回退App Server账户／额度请求各30秒，初始化10秒；缓存显示不等待网络，首次手动取得新数据仍可能等待数秒或更久。更新时先退出旧桌宠，将新包完整解压到单独英文目录，双击根目录启动文件；移动时整体移动该目录，原有设置会沿用，旧配置缺失的联网方式采用本地模式。
 
 ## 安装 Codex 插件
 
-将解压目录长期保留，然后在普通终端执行，将示例绝对路径换成自己解压得到的 marketplace 目录：
+将解压目录长期保留，然后在普通终端执行，将示例绝对路径换成自己解压得到的 解压根目录：
 
 ```powershell
-codex plugin marketplace add 'F:\你的目录\marketplace'
+codex plugin marketplace add 'F:\Apps\CodexCompanion'
 codex plugin add codex-companion@codex-companion-local
 ```
 
@@ -55,7 +55,7 @@ codex plugin add codex-companion@codex-companion-local
 
 ## 命令与诊断
 
-在普通终端从 exe 所在目录执行：
+在普通终端从解压根目录的 `app/bin` 执行控制命令：
 
 ```powershell
 ./CodexCompanion.Cli.exe --command show
@@ -86,3 +86,9 @@ GUI exe 的 `--probe-quota` 是主动联网的开发诊断入口，不用于日�
 倒计时仅在鼠标悬停气泡本身、菜单或设置窗口打开时暂停。点击后鼠标停在角色上不会暂停。自动关闭由现有250毫秒界面检查处理，可能有一个检查周期左右的误差。
 
 0.6.5的HTTP优先读取、回退条件及限频详见[更新说明](UPDATE-0.6.5.md)。本地模式仍不自动联网；已有联网方式不会因升级改变。
+
+## 0.6.7目录布局与升级
+
+根目录只有启动文件和README；app保存完整可独立安装的技能插件（含bin），docs保存说明和报告，licenses保存许可。插件本地源指向./app，因此安装缓存后的CLI相对路径仍有效。详细目录结构见[UPDATE-0.6.7.md](UPDATE-0.6.7.md)。
+
+原有角色、语言、查询模式、30秒等间隔和提醒保留。已开启开机启动时，程序在下次手动启动后修复自己已有的启动路径；不会启用原先关闭的启动项，也不会重建用户在系统中移除的Run值。

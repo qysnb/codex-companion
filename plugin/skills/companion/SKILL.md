@@ -29,7 +29,7 @@ The app accepts only these fixed values. A stopped get-status or hide returns an
 
 ## Network policy
 
-Version0.6.6 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate online quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh quota now. An explicit request for a fresh online reading permits one refresh-quota call.
+Version0.6.7 defaults to **local event sync, manual network only**, including older settings with no network-mode field. Startup, normal clicks, hiding, retry deadlines and cached reset timestamps do not initiate online quota reads in this mode. Inspecting status is local. Do not automatically refresh merely because a cache is absent, stale or unknown; explain that the user can choose Refresh quota now. An explicit request for a fresh online reading permits one refresh-quota call.
 
 The user can select the online supplement mode under right-click → Quota settings → Query mode:
 
@@ -60,3 +60,5 @@ Quota recovery reminders are enabled by default and can be disabled under Quota 
 If bin/CodexCompanion.Cli.exe or CodexCompanion.exe is missing, install the complete marketplace package. Do not run or restore quarantined scripts, alter antivirus settings, or override PowerShell execution policy.
 
 Online reads prefer a pooled HTTP GET to the fixed official chatgpt.com/backend-api/wham/usage origin using existing credentials in memory. Only the application credential loader may read them; never inspect or print them using tools. No redirects, cookies, custom origins, prices or reset-credit requests. Certain failures allow one private App Server recovery per15minutes;429 does not. Status quotaTransport reports sanitized request/success/failure counters, body bytes, duration and fallback count; responseBodyBytes is not a network-traffic total. In automatic mode, HTTP results remain authoritative over delayed local events.
+
+Portable0.6.7 packages start through the root CodexCompanion.exe; their complete plugin is the app folder. This skill remains inside app/skills/companion, so ../../bin/CodexCompanion.Cli.exe stays valid after installation or caching. Never move the GUI exe away from its runtime files; users relocate the whole package folder.

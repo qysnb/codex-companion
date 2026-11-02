@@ -2,6 +2,7 @@ using CodexCompanion.Core;
 
 try
 {
+if (args.Contains("--layout-tests")) { LayoutTests.Run(); return 0; }
 if (args.Contains("--http-quota-tests")) { HttpQuotaTests.Run(); return 0; }
 if (args.Length == 2 && args[0] == "--observe-local-quota" && int.TryParse(args[1], out var observeSeconds) && observeSeconds is >= 10 and <= 60)
 {
@@ -67,6 +68,7 @@ Check("theme rejects non-hex and transparent input and persists independent colo
 Console.WriteLine($"{passed} interaction/settings tests passed.");
 SizeCharacterTests.Run();
 RuntimeTests.Run();
+LayoutTests.Run();
 ResourceTests.Run();
 PresentationTests.Run();
 QuotaTests.Run();

@@ -117,6 +117,7 @@ internal sealed partial class CompanionWindow : Window
     }
     internal Task StartAsync()
     {
+        RepairStartupLocation();
         new WindowInteropHelper(this).EnsureHandle();
         pipe = new CommandPipe(request => Dispatcher.InvokeAsync(() => ExecuteAsync(request)).Task.Unwrap());
         frame.Start(); StartLocalQuotaSync(); _ = quota.StartAsync(); Tick(null, EventArgs.Empty); return Task.CompletedTask;
@@ -502,10 +503,24 @@ internal sealed partial class CompanionWindow : Window
         {
             using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
             var enabled = !settings.Startup;
-            if (enabled) key.SetValue("CodexCompanion", "\"" + Environment.ProcessPath + "\""); else key.DeleteValue("CodexCompanion", false);
+            if (enabled) key.SetValue("CodexCompanion", StartupCommand()); else key.DeleteValue("CodexCompanion", false);
             settings = settings with { Startup = enabled }; Save();
         }
         catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException) { ShowMessage(Local("无法修改开机启动", "Startup could not be changed", "自動起動を変更できません"), e.GetType().Name, 7); }
+    }
+    string StartupCommand() => "\"" + ApplicationLayout.StartupExecutable(AppContext.BaseDirectory, Environment.ProcessPath!) + "\"";
+    void RepairStartupLocation()
+    {
+        if (validationMode || !settings.Startup) return;
+        try
+        {
+            // Repair only this app's existing entry after relocation; never
+            // recreate a Run value that the user removed outside the app.
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+            if (key?.GetValue("CodexCompanion") is string previous && previous != StartupCommand())
+                key.SetValue("CodexCompanion", StartupCommand());
+        }
+        catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException) { }
     }
     void SetCharacter(string value) { controller.SetCharacter(value); settings = settings with { Character = value }; LoadArt(); Save(); if (controller.Bubble == BubbleKind.Quota) RenderQuota(); else RefreshGreeting(); }
     void SetLanguage(string value) { controller.SetLanguage(value); settings = settings with { Language = value }; Save(); if (controller.Bubble == BubbleKind.Quota) RenderQuota(); else RefreshGreeting(); }

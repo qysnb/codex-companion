@@ -2,6 +2,8 @@
 **/obj/
 dist/
 .tmp/
+/app/
+/CodexCompanion.exe
 *.user
 *.log
 
@@ -56,3 +58,5 @@ docs/*
 !docs/examples/*.png
 !docs/VALIDATION-0.6.6-2026-11-02.md
 !docs/VALIDATION-0.6.6-2026-11-02.json
+
+!docs/UPDATE-0.6.7.md

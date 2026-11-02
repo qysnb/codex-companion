@@ -17,7 +17,7 @@ dotnet publish src/Companion.Cli/Companion.Cli.csproj -c Release -r win-x64 --se
 
 将 dist/cli 中以 `CodexCompanion.Cli` 开头的四个文件复制进 dist/app，复用相同微软运行时。它是短时控制台客户端，不常驻。Lite 版的主程序和客户端都以 `--self-contained false` 发布。
 
-将 plugin 的 `.codex-plugin` 和 `skills` 文件夹拷贝到 `marketplace/plugins/codex-companion`，将发布文件拷贝到该插件的 `bin` 子目录，再将 `packaging/marketplace.json` 放入 `marketplace/.agents/plugins/marketplace.json`。只分发此目录和说明文档，不分发原型 PowerShell 脚本、测试程序、登录信息或开发缓存。
+使用本文末尾的 packaging/build_launcher.py 和 packaging/package_release.py 构建新的便携包。根目录启动文件旁的 app 是完整插件，app/bin 保存运行时，根目录 .agents/plugins/marketplace.json 指向 ./app。不要将新目录清单放入旧的 plugins/codex-companion 结构中。
 
 素材校验使用伴侣自己的 `--check-assets` 命令，离线检查七套透明精灵图和 630 条台词。`--render-preview <输出PNG>` 只渲染自身界面，不捕获其他应用或聊天。
 
@@ -33,4 +33,17 @@ dotnet publish src/Companion.Cli/Companion.Cli.csproj -c Release -r win-x64 --se
 
 0.4.0中可用 `--prepare-art <项目绝对路径> <角色ID>` 只准备一位新角色，避免改写已有对齐图。`--check-assets` 根据四档尺寸及100%／125%／150%／200%／300%解码比例生成17档不同像素高度（最高960），覆盖七角色。`--verify-ui` 覆盖84组角色／语言／尺寸，预览高度随角色数量变化。此处解码尺寸检查不等于所有物理多屏组合已实测。
 
-应用图标为 `assets/companion.ico`，由Luna第一帧生成16／32／48／64／128／256尺寸透明ICO，并通过ApplicationIcon嵌入EXE。项目根目录 `.lnk` 直接指向稳定的 `dist/marketplace/plugins/codex-companion/bin/CodexCompanion.exe`，无命令参数和脚本。
+应用图标为 `assets/companion.ico`，由Luna第一帧生成16／32／48／64／128／256尺寸透明ICO，并通过ApplicationIcon嵌入EXE。项目根目录 `CodexCompanion.exe` 为带图标的原生入口，实际程序位于 `app/bin/CodexCompanion.exe`。
+
+## Root launcher and portable layout (0.6.7)
+
+The native launcher needs MinGW-w64 gcc and windres only at build time. It embeds assets/companion.ico, creates the fixed app/bin/CodexCompanion.exe process without a shell, then exits. It has no .NET requirement, extraction or network client.
+
+```powershell
+python packaging/build_launcher.py --output .tmp/launcher-0.6.7/CodexCompanion.exe
+python tests/launcher_smoke.py .tmp/launcher-0.6.7/CodexCompanion.exe
+python packaging/package_release.py --runtime dist/app --launcher .tmp/launcher-0.6.7/CodexCompanion.exe --output dist/releases/0.6.7
+python packaging/package_release.py --runtime dist/lite --launcher .tmp/launcher-0.6.7/CodexCompanion.exe --output dist/releases/0.6.7 --lite
+```
+
+Merge the CLI publish files into each runtime first. The packager verifies ASCII paths, root entry, plugin/catalog relative paths, seven character strips, excluded development/private files, and ZIP CRC. The root catalog points to ./app; each app folder remains an installable complete plugin with its own bin and skills.

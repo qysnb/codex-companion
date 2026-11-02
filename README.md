@@ -2,7 +2,7 @@
 
 Windows x64 原生透明角色伴侣，配套一个本地 Codex 技能插件。C# / WPF 实现，不使用 Electron、WebView、浏览器或 JavaScript 运行时。
 
-当前版本 **0.6.6**，提供七位角色：**Astra、Sol、Luna、Fable、Haiku、Pro、Flash**。每位均有待机闭嘴、问候眯眼、用量张嘴三张完整形态，配合轻量过渡和点击回弹；气泡关闭后恢复待机。奇数次左键显示五小时／周额度缓存和重置时间，偶数次显示本地台词。右键可切换角色、语言、大小、主题、额度设置、页面持续时间等设置。长按至少350毫秒后拖动才调整位置，不计为点击。简中、英文、日文共630条台词，图片、动画和问候均本地运行。
+当前版本 **0.6.7**，提供七位角色：**Astra、Sol、Luna、Fable、Haiku、Pro、Flash**。每位均有待机闭嘴、问候眯眼、用量张嘴三张完整形态，配合轻量过渡和点击回弹；气泡关闭后恢复待机。奇数次左键显示五小时／周额度缓存和重置时间，偶数次显示本地台词。右键可切换角色、语言、大小、主题、额度设置、页面持续时间等设置。长按至少350毫秒后拖动才调整位置，不计为点击。简中、英文、日文共630条台词，图片、动画和问候均本地运行。
 
 这是第三方 Windows 桌面伴侣，不是 OpenAI 官方插件。源码使用 [MIT](LICENSE)，角色图片与图标的许可范围见 [素材说明](ASSETS-NOTICE.md)。
 
@@ -21,6 +21,9 @@ Windows x64 原生透明角色伴侣，配套一个本地 Codex 技能插件。C
 
 ## 运行
 
+解压后直接双击最外层 **CodexCompanion.exe**。启动文件与完整的 `app` 文件夹放在一起，可移动整个目录；运行依赖、角色和插件均在 `app` 内，说明在 `docs`，许可在 `licenses`。分发路径全部使用英文。
+
+
 从 [Releases](https://github.com/qysnb/codex-companion/releases/latest) 下载运行包，完整解压后启动：
 
 | 文件 | 适用情况 |
@@ -29,7 +32,7 @@ Windows x64 原生透明角色伴侣，配套一个本地 Codex 技能插件。C
 | `codex-companion-lite-win-x64.zip` | 体积较小；需要安装 .NET 8 Desktop Runtime x64 |
 | `SHA256SUMS.txt` | 运行包校验值 |
 
-自包含包双击 `marketplace/plugins/codex-companion/bin/CodexCompanion.exe`，Lite包对应目录为 `marketplace-lite`。保留 EXE 旁的 DLL、运行时和 assets 文件夹。GitHub 自动生成的 Source code ZIP 是源码，不是可直接运行的版本。
+自包含包和Lite包均双击最外层 `CodexCompanion.exe`。保留旁边的完整 `app` 文件夹；移动时一起移动整个目录。GitHub 自动生成的 Source code ZIP 是源码，不是可直接运行的版本。
 
 读取额度需要本机已安装 Codex 桌面端，并使用自己的 ChatGPT 登录。Codex 桌面窗口处于前台时角色出现并跟随窗口；切到其他软件、最小化或关闭Codex时自动隐藏。程序不占任务栏，从右键菜单退出。默认订阅宿主新写入的本地额度事件，不在启动或普通点击时联网；首次等待宿主新事件，也可右键“立即刷新额度”。
 
