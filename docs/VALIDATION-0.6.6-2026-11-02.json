@@ -103,12 +103,12 @@
       "logicalBytes": 188069121
     },
     "selfContainedRuntime": {
-      "fileCount": 477,
-      "logicalBytes": 182149876
+      "fileCount": 476,
+      "logicalBytes": 182111900
     },
     "liteRuntime": {
-      "fileCount": 18,
-      "logicalBytes": 14512019
+      "fileCount": 17,
+      "logicalBytes": 14474043
     },
     "runtimeArt": {
       "fileCount": 8,
