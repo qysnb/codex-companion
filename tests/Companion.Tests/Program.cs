@@ -2,6 +2,7 @@ using CodexCompanion.Core;
 
 try
 {
+if (args.Contains("--http-quota-tests")) { HttpQuotaTests.Run(); return 0; }
 if (args.Length == 2 && args[0] == "--observe-local-quota" && int.TryParse(args[1], out var observeSeconds) && observeSeconds is >= 10 and <= 60)
 {
     var home = Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
@@ -14,6 +15,7 @@ if (args.Length == 2 && args[0] == "--observe-local-quota" && int.TryParse(args[
 }
 if (args.Contains("--local-quota-tests")) { LocalQuotaTests.Run(); LocalQuotaServiceTests.Run(); QuotaTimestampTests.Run(); return 0; }
 if (args.Contains("--quota-reset-tests")) { QuotaResetTests.Run(); return 0; }
+if (args.Contains("--quota-expiry-tests")) { QuotaExpiryTests.Run(); return 0; }
 if (args.Contains("--verify-failure-exit")) throw new InvalidOperationException("Controlled test failure: expected exit code 1.");
 var passed = 0;
 void Check(string name, Action test) { test(); Console.WriteLine("PASS " + name); passed++; }
@@ -75,6 +77,8 @@ QuotaNetworkPolicyTests.Run();
 LocalQuotaTests.Run();
 LocalQuotaServiceTests.Run();
 QuotaTimestampTests.Run();
+QuotaExpiryTests.Run();
+HttpQuotaTests.Run();
 return 0;
 }
 catch (Exception error)

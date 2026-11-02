@@ -47,3 +47,12 @@ docs/*
 !docs/VERIFICATION-PUBLIC.md
 !docs/SECURITY.md
 !docs/characters.png
+
+!docs/UPDATE-0.6.5.md
+
+!docs/UPDATE-0.6.6.md
+
+!docs/examples/
+!docs/examples/*.png
+!docs/VALIDATION-0.6.6-2026-11-02.md
+!docs/VALIDATION-0.6.6-2026-11-02.json

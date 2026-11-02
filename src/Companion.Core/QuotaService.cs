@@ -8,6 +8,13 @@ public sealed partial class QuotaService : IAsyncDisposable
     readonly object _sync = new();
     readonly Func<CancellationToken, Task<ICodexConnection>> _connect;
     readonly Func<DateTimeOffset> _clock;
+    readonly CodexHttpQuotaClient? _http;
+    string _remoteSource = "app-server";
+    string? _remoteCredentialIdentity;
+    DateTimeOffset _nextFallback;
+    DateTimeOffset _serverRetryAt;
+    long _fallbacks;
+    public object? HttpTransportStats => _http is null ? null : new { http = _http.Stats, appServerFallbacks = Interlocked.Read(ref _fallbacks) };
     readonly CancellationTokenSource _stop = new();
     readonly SemaphoreSlim _wake = new(0, 1);
     readonly HashSet<long> _observedResets = new();
@@ -39,10 +46,11 @@ public sealed partial class QuotaService : IAsyncDisposable
     public bool IsCurrentResetNotice(QuotaResetNotice notice)
     { lock (_sync) return !_disposed && ReferenceEquals(LocalPreferred() ? _lastLocalResetNotice : _lastResetNotice, notice); }
 
-    public QuotaService(Func<CancellationToken, Task<ICodexConnection>>? connect = null, Func<DateTimeOffset>? clock = null)
+    public QuotaService(Func<CancellationToken, Task<ICodexConnection>>? connect = null, Func<DateTimeOffset>? clock = null, CodexHttpQuotaClient? httpQuota = null)
     {
-        _connect = connect ?? CodexConnection.ConnectAsync;
+        _connect = connect ?? CodexConnection.ConnectIndependentAsync;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _http = httpQuota ?? (connect is null ? new CodexHttpQuotaClient() : null);
     }
 
     public QuotaSnapshot Snapshot { get { lock (_sync) return CurrentSnapshot(); } }
@@ -125,6 +133,7 @@ public sealed partial class QuotaService : IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             var now = _clock();
+            if (_http is not null && now < _serverRetryAt) return Task.FromResult(CurrentSnapshot());
             // Only a deliberate, non-scheduled force request can use the
             // network in local mode. Notifications and retry/reset timers must
             // pass the same gate as ordinary clicks.
@@ -132,7 +141,7 @@ public sealed partial class QuotaService : IAsyncDisposable
             if (_networkMode == QuotaNetworkMode.Local && !manual ||
                 _networkMode == QuotaNetworkMode.OnDemand && scheduled)
                 return Task.FromResult(CurrentSnapshot());
-            if (!manual && LocalFresh(now)) return Task.FromResult(CurrentSnapshot());
+            if (_http is null && !manual && LocalFresh(now)) return Task.FromResult(CurrentSnapshot());
             ObserveElapsedResets(now);
             if (_networkMode == QuotaNetworkMode.OnDemand && !force &&
                 _lastAttempt is { } attempted && now - attempted < TimeSpan.FromSeconds(Math.Max(900, _refreshInterval.TotalSeconds)))
@@ -183,8 +192,54 @@ public sealed partial class QuotaService : IAsyncDisposable
         var identityVerified = false;
         var unattached = false;
         var readToken = readStop.Token;
+        string? credentialIdentityAtStart = null;
         try
         {
+            if (_http is not null)
+            {
+                stage = "http-quota";
+                // Never retain another account's cache after credentials change.
+                var httpIdentity = credentialIdentityAtStart = _http.CurrentIdentity;
+                lock (_sync)
+                {
+                    if (_disposed || epoch != _accountEpoch) return;
+                    identityVerified = httpIdentity is not null && (httpIdentity == _accountIdentity || httpIdentity == _remoteCredentialIdentity);
+                    if (!identityVerified) { ClearKnownQuota(); _snapshot = new(QuotaStatus.Loading, null, null, null); }
+                }
+                try
+                {
+                    var reading = await _http.ReadAsync(readToken).ConfigureAwait(false);
+                    long httpRevision;
+                    ICodexConnection? old;
+                    lock (_sync)
+                    {
+                        if (_disposed || epoch != _accountEpoch) return;
+                        if (_accountIdentity != reading.Identity)
+                        {
+                            ClearKnownQuota(); _observedResets.Clear(); _scheduledResets.Clear(); _quotaRevision++;
+                        }
+                        _accountIdentity = reading.Identity; _signedOut = false;
+                        identityVerified = true; httpRevision = _quotaRevision;
+                        _remoteSource = "http"; _remoteCredentialIdentity = reading.Identity; old = DetachConnection();
+                    }
+                    if (old is not null) await SafeDisposeAsync(old).ConfigureAwait(false);
+                    Publish(reading.Snapshot, epoch, success: true, httpRevision);
+                    return;
+                }
+                catch (QuotaHttpException error)
+                {
+                    lock (_sync)
+                    {
+                        if (error.RetryAfter is { } wait && wait > TimeSpan.Zero) _serverRetryAt = _clock() + wait;
+                        if (error.RateLimited && _serverRetryAt < _clock() + _refreshInterval) _serverRetryAt = _clock() + _refreshInterval;
+                        if (error.InvalidateIdentity) { ClearKnownQuota(); _snapshot = new(QuotaStatus.Loading, null, null, null); identityVerified = false; }
+                        if (!error.AllowFallback || _clock() < _nextFallback) throw;
+                        _nextFallback = _clock().AddMinutes(15); _fallbacks++;
+                    }
+                    // A bounded independent server is only a recovery path.
+                }
+            }
+            stage = "connect";
             lock (_sync) { if (_disposed || epoch != _accountEpoch) return; connection = _connection; }
             if (connection is null)
             {
@@ -262,6 +317,13 @@ public sealed partial class QuotaService : IAsyncDisposable
             lock (_sync) { if (_disposed || epoch != _accountEpoch || revision != _quotaRevision) return; }
             var parsed = QuotaParser.Parse(response, _clock());
             if (parsed.Status != QuotaStatus.Live) throw new IOException("Quota information is unavailable.");
+            var credentialIdentityAfter = _http?.CurrentIdentity;
+            lock (_sync)
+            {
+                if (_http is not null && credentialIdentityAfter != credentialIdentityAtStart)
+                { ClearKnownQuota(); _snapshot = new(QuotaStatus.Loading, null, null, null); identityVerified = false; throw new QuotaHttpException("Account changed during recovery.", false, true); }
+                _remoteSource = "app-server"; _remoteCredentialIdentity = credentialIdentityAfter;
+            }
             Publish(parsed, epoch, success: true, revision);
         }
         catch (Exception) when (readToken.IsCancellationRequested)
@@ -298,6 +360,11 @@ public sealed partial class QuotaService : IAsyncDisposable
                     }
                     _failures++;
                     _retryAt = _clock().AddSeconds(_failures == 1 ? 5 : _failures == 2 ? 15 : 60);
+                    if (_http is not null)
+                    {
+                        var retry = error is QuotaHttpException { RetryAfter: { } delay } ? delay : TimeSpan.Zero;
+                        _retryAt = _clock() + TimeSpan.FromSeconds(Math.Max(Math.Max(retry.TotalSeconds, _refreshInterval.TotalSeconds), _failures >= 3 ? 60 : 0));
+                    }
                     failed = _snapshot = _snapshot with
                     {
                         Status = _snapshot.FiveHour is not null || _snapshot.Weekly is not null ? QuotaStatus.Stale : QuotaStatus.Unavailable,
@@ -349,7 +416,7 @@ public sealed partial class QuotaService : IAsyncDisposable
     { try { await SafeDisposeAsync(await connecting.ConfigureAwait(false)).ConfigureAwait(false); } catch { } }
 
     void ClearKnownQuota()
-    { _lastKnownQuota = null; _lastKnownIdentity = null; _remoteReadAt = null; _remoteReadSequence = 0; _resetTracker.Clear(); _lastResetNotice = null; ClearLocalResetBaseline(); }
+    { _lastKnownQuota = null; _lastKnownIdentity = null; _remoteCredentialIdentity = null; _remoteReadAt = null; _remoteReadSequence = 0; _resetTracker.Clear(); _lastResetNotice = null; ClearLocalResetBaseline(); }
     QuotaResetNotice? RememberQuota(QuotaSnapshot snapshot)
     {
         if (snapshot.Status == QuotaStatus.Live && _accountIdentity is not null)
@@ -521,9 +588,12 @@ public sealed partial class QuotaService : IAsyncDisposable
     }
 
     DateTimeOffset NetworkDeadline(DateTimeOffset now)
-        => _networkMode != QuotaNetworkMode.Automatic ? DateTimeOffset.MaxValue
-            : LocalFresh(now) ? _localObservedAt!.Value + _refreshInterval
+    {
+        var deadline = _networkMode != QuotaNetworkMode.Automatic ? DateTimeOffset.MaxValue
+            : _http is null && LocalFresh(now) ? _localObservedAt!.Value + _refreshInterval
             : _failures > 0 ? _retryAt : _prefetchPending || _resetPending || _notificationPending ? now : _nextPeriodic;
+        return _http is not null && _serverRetryAt > deadline ? _serverRetryAt : deadline;
+    }
 
     TimeSpan NextDelay(DateTimeOffset now, bool refreshing)
     {
@@ -598,6 +668,7 @@ public sealed partial class QuotaService : IAsyncDisposable
         }
         if (loop is not null) await loop.ConfigureAwait(false);
         if (refresh is not null) await refresh.ConfigureAwait(false);
+        _http?.Dispose();
         _stop.Dispose();
         _wake.Dispose();
     }

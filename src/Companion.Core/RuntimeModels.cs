@@ -30,6 +30,7 @@ public static class CompanionCommand
         "set-character" => CompanionSettings.Characters.Contains(value) ? null : "Invalid character.",
         "set-language" => CompanionSettings.Languages.Contains(value) ? null : "Invalid language.",
         "set-refresh-interval" => int.TryParse(value, out var seconds) && seconds is >= 5 and <= 3600 ? null : "Refresh interval must be 5–3600 seconds.",
+        "set-network-mode" => value is "local" or "on-demand" or "automatic" ? null : "Unknown quota network mode.",
         "show" or "hide" or "exit" or "refresh-quota" or "get-status" => value is null ? null : "This command does not take a value.",
         _ => "Unknown command."
     };

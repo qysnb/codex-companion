@@ -39,6 +39,10 @@ public sealed class CodexConnection : ICodexConnection
     }
 
     public static async Task<ICodexConnection> ConnectAsync(CancellationToken cancellationToken = default)
+        => await ConnectCoreAsync(false, cancellationToken).ConfigureAwait(false);
+    public static Task<ICodexConnection> ConnectIndependentAsync(CancellationToken cancellationToken = default)
+        => ConnectCoreAsync(true, cancellationToken);
+    static async Task<ICodexConnection> ConnectCoreAsync(bool independentOnly, CancellationToken cancellationToken)
     {
         LastDiagnostic = null;
         diagnosticStarted = Stopwatch.GetTimestamp();
@@ -47,7 +51,7 @@ public sealed class CodexConnection : ICodexConnection
         var attempts = new List<string>();
         // The proxy observes the running desktop server. An older CLI or an absent
         // control socket falls back to an independent, read-only app-server client.
-        foreach (var proxy in new[] { true, false })
+        foreach (var proxy in independentOnly ? new[] { false } : new[] { true, false })
         {
             CodexConnection? connection = null;
             try
@@ -80,7 +84,7 @@ public sealed class CodexConnection : ICodexConnection
                 connection = new CodexConnection(process);
                 await connection.RequestAsync("initialize", new
                 {
-                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.6.3" },
+                    clientInfo = new { name = "codex_companion", title = "Codex Companion", version = "0.6.5" },
                     capabilities = new { experimentalApi = false }
                 }, cancellationToken).ConfigureAwait(false);
                 await connection.WriteAsync(new { method = "initialized" }, cancellationToken).ConfigureAwait(false);

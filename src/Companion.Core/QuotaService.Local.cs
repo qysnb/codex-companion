@@ -19,6 +19,7 @@ public sealed partial class QuotaService
         {
             lock (_sync)
             {
+                if (HttpAuthoritative()) return _remoteReadAt;
                 var local = _localEnabled && _localSnapshot is not null ? _localReadAt : null;
                 var remote = _snapshot.FiveHour is not null || _snapshot.Weekly is not null ? _remoteReadAt : null;
                 return local is null ? remote : remote is null || local >= remote ? local : remote;
@@ -26,10 +27,19 @@ public sealed partial class QuotaService
         }
     }
     QuotaSnapshot CurrentSnapshot()
-        => _localEnabled && _localSnapshot is { UpdatedAt: { } timestamp } local &&
-            (_snapshot.FiveHour is null && _snapshot.Weekly is null || _snapshot.UpdatedAt is null || timestamp > _snapshot.UpdatedAt ||
+        => !HttpAuthoritative() && _localEnabled && _localSnapshot is { UpdatedAt: { } timestamp } local &&
+            !RegressesExpiredCycle(local, _snapshot, _clock()) &&
+            (RegressesExpiredCycle(_snapshot, local, _clock()) || _snapshot.FiveHour is null && _snapshot.Weekly is null || _snapshot.UpdatedAt is null || timestamp > _snapshot.UpdatedAt ||
                 timestamp == _snapshot.UpdatedAt && (_localReadAt > _remoteReadAt || _localReadAt == _remoteReadAt && _localReadSequence > _remoteReadSequence))
             ? local : _snapshot;
+    bool HttpAuthoritative() => _http is not null && _networkMode != QuotaNetworkMode.Local &&
+        _remoteSource == "http" && (_snapshot.FiveHour is not null || _snapshot.Weekly is not null);
+    static bool RegressesExpiredCycle(QuotaSnapshot candidate, QuotaSnapshot known, DateTimeOffset now)
+    {
+        static bool Older(QuotaWindow? a, QuotaWindow? b, DateTimeOffset time)
+            => a?.ResetsAt is { } oldReset && oldReset <= time && b?.ResetsAt is { } newReset && newReset > time;
+        return Older(candidate.FiveHour, known.FiveHour, now) || Older(candidate.Weekly, known.Weekly, now);
+    }
     bool LocalPreferred() => _localSnapshot is not null && ReferenceEquals(CurrentSnapshot(), _localSnapshot);
     bool LocalFresh(DateTimeOffset now) => LocalPreferred() && _localObservedAt is { } observed && now < observed + _refreshInterval;
     public bool LocalSyncEnabled
@@ -49,7 +59,7 @@ public sealed partial class QuotaService
         }
     }
     public string Source
-    { get { lock (_sync) return LocalPreferred() ? "local-session" : _snapshot.FiveHour is not null || _snapshot.Weekly is not null ? "app-server" : "none"; } }
+    { get { lock (_sync) return LocalPreferred() ? "local-session" : _snapshot.FiveHour is not null || _snapshot.Weekly is not null ? _remoteSource : "none"; } }
     public bool AcceptLocalReading(LocalQuotaReading reading)
     {
         QuotaSnapshot snapshot;

@@ -61,6 +61,7 @@ internal sealed class QuotaPanel : StackPanel
         { accent = new SolidColorBrush((Color)ColorConverter.ConvertFromString(settings.QuotaBarColor)); accent.Freeze(); barColor = settings.QuotaBarColor; }
         void UpdateRow(Row row, string name, QuotaWindow? value)
         {
+            var expired = value?.ResetsAt is { } reset && reset <= DateTimeOffset.Now;
             row.Labels[0].Text = name;
             row.Labels[1].Text = value?.ResetsAt?.ToLocalTime().ToString("HH:mm") ?? "—";
             row.Labels[1].ToolTip = value?.ResetsAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
@@ -71,9 +72,9 @@ internal sealed class QuotaPanel : StackPanel
             row.Labels[2].Text = duration ?? "—";
             row.ResetSuffix.Text = duration is not null ? Text(" 后重置", " to reset", " 後にリセット")
                 : left.HasValue ? Text(" 等待重置", " pending", " 更新待ち") : Text(" 重置未知", " unknown", " 不明");
-            row.Labels[3].Text = value is null ? Text("未知", "Unknown", "不明")
+            row.Labels[3].Text = expired ? Text("待同步", "Pending", "同期待ち") : value is null ? Text("未知", "Unknown", "不明")
                 : value.RemainingPercent.ToString("0.#", CultureInfo.CurrentCulture) + Text("%剩余", "% left", "%残り");
-            row.Set(value?.RemainingPercent, foreground, accent);
+            row.Set(expired ? null : value?.RemainingPercent, foreground, accent);
         }
         UpdateRow(FiveHour, Text("5限", "5-hour limit", "5時間"), snapshot.FiveHour);
         UpdateRow(Weekly, Text("周限", "Weekly limit", "週間"), snapshot.Weekly);

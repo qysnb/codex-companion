@@ -26,6 +26,10 @@ public static class RuntimeTests
             throw new Exception("IPC must accept only known commands and valid values.");
         if (CompanionCommand.Validate("exit", null) is not null || CompanionCommand.Validate("exit", "anything") is null)
             throw new Exception("Exit is a fixed command without additional arguments.");
+        foreach (var mode in new[] { "local", "on-demand", "automatic" })
+            if (CompanionCommand.Validate("set-network-mode", mode) is not null) throw new Exception("Known network mode rejected.");
+        foreach (var mode in new string?[] { null, "auto", "automatic; exit", "https://example.com" })
+            if (CompanionCommand.Validate("set-network-mode", mode) is null) throw new Exception("IPC accepted an unlisted network mode.");
         Console.WriteLine("PASS placement/DPI/clamping, hover lifetime, IPC validation");
         BubbleDurationTests.Run();
     }

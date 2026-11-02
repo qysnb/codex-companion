@@ -1,0 +1,161 @@
+{
+  "version": "0.6.6",
+  "startedAt": "2026-11-02T13:41:11.850401+08:00",
+  "finishedAt": "2026-11-02T13:51:12.098799+08:00",
+  "durationSeconds": 600.248,
+  "configuredIntervalSeconds": 30,
+  "mode": "automatic",
+  "http": {
+    "requests": 20,
+    "successes": 20,
+    "failures": 0,
+    "responseBodyBytes": 24520
+  },
+  "fallbacks": 0,
+  "uploadBytes": 41513,
+  "downloadBytes": 44492,
+  "totalBytes": 86005,
+  "connections": 2,
+  "ownedProcesses": 1,
+  "samples": 2342,
+  "unmeasuredDirectConnections": 0,
+  "samplingErrors": {},
+  "latencyMs": {
+    "median": 462.25,
+    "min": 411.8,
+    "max": 3650.4
+  },
+  "readIntervalSeconds": {
+    "mean": 30.778251842105263,
+    "min": 30.424109,
+    "max": 33.662336
+  },
+  "projectedBytesPerHour": 515816.7957244339,
+  "projectedBytesPerDay": 12379603.097386412,
+  "workingSetBytes": {
+    "first": 148340736,
+    "min": 148340736,
+    "median": 152018944.0,
+    "max": 157024256,
+    "last": 151994368
+  },
+  "privateBytes": {
+    "first": 59019264,
+    "min": 58753024,
+    "median": 60739584.0,
+    "max": 65871872,
+    "last": 60698624
+  },
+  "cpuSeconds": 4.90625,
+  "averageCpuSingleCorePercent": 0.8173704868654289,
+  "byVisibility": {
+    "visible": {
+      "samples": 16,
+      "workingSetMB": {
+        "min": 145,
+        "median": 145.25,
+        "max": 150.5
+      },
+      "privateMB": {
+        "min": 58.6,
+        "median": 58.85,
+        "max": 63.9
+      },
+      "retainedArtBytes": {
+        "min": 1350000,
+        "median": 1350000.0,
+        "max": 1350000
+      },
+      "decodedFrames": {
+        "min": 3,
+        "median": 3.0,
+        "max": 3
+      }
+    },
+    "hidden": {
+      "samples": 103,
+      "workingSetMB": {
+        "min": 143.1,
+        "median": 146,
+        "max": 148.9
+      },
+      "privateMB": {
+        "min": 57.1,
+        "median": 59,
+        "max": 62
+      },
+      "retainedArtBytes": {
+        "min": 0,
+        "median": 0,
+        "max": 1350000
+      },
+      "decodedFrames": {
+        "min": 0,
+        "median": 0,
+        "max": 3
+      }
+    }
+  },
+  "memoryUnitNote": "workingSetMB/privateMB in app status are MiB (1048576 bytes); raw byte fields retain their exact unit.",
+  "storage": {
+    "installedPlugin": {
+      "fileCount": 484,
+      "logicalBytes": 188069121
+    },
+    "selfContainedRuntime": {
+      "fileCount": 477,
+      "logicalBytes": 182149876
+    },
+    "liteRuntime": {
+      "fileCount": 18,
+      "logicalBytes": 14512019
+    },
+    "runtimeArt": {
+      "fileCount": 8,
+      "logicalBytes": 13104213
+    },
+    "repositoryRuntimeArt": {
+      "fileCount": 7,
+      "logicalBytes": 13062118
+    }
+  },
+  "uiVerification": {
+    "menuScenarios": 108,
+    "provenanceScenarios": 12,
+    "layouts": 84,
+    "reminderScenarios": 9,
+    "themeScenarios": 24,
+    "durationScenarios": 12,
+    "cachedQuotaDisplayMilliseconds": [
+      107.9543,
+      11.4175,
+      15.5055,
+      12.4334,
+      11.0299
+    ],
+    "serialRecheckPassed": true,
+    "timedExpiryMilliseconds": [
+      5246.0319,
+      5243.5599
+    ],
+    "systemDpiScale": 1.25,
+    "initialUiRunMaximumMs": 172.8,
+    "initialUiRunPassed": false
+  },
+  "binarySha256": {
+    "CodexCompanion.exe": "8cadc08a8a94ec1729473c7ca1296c26e69c32a25c73582592f3324b790951c8",
+    "CodexCompanion.dll": "c00274b87ef034a359a8c101e92529b5555d8feb0098da498089af44bfb10635",
+    "CodexCompanion.Cli.exe": "77c9cb1cd639c36c9e564eb60f421fd9be3df89af1b940972339419c6323654e",
+    "CodexCompanion.Cli.dll": "78e3415e79910d2625ee5fff63b6a8363745709fbfa273da7bee1cc27f221d75",
+    "Companion.Core.dll": "b43d51f62892fa721472c8b8cd6b1701d95496e49aa0a5a1b32e2ad8664a4414"
+  },
+  "limitations": [
+    "Proxy forwarded bytes, not ISP-billed packet totals; no IP/TCP/DNS/retransmission accounting.",
+    "Polling may miss extremely short connections or closing tail bytes.",
+    "Steady-state measurement, existing connection bytes before the window subtracted; not a cold-start benchmark.",
+    "Real network sample did not exercise fallback failures; those have synthetic tests.",
+    "Mixed visible/hidden runtime; visibility grouped by status samples every5seconds, not continuous attribution.",
+    "Storage is logical file size, not NTFS allocated clusters; Lite excludes the separately installed shared .NET runtime.",
+    "Ten minutes of memory data is not a long-term leak proof."
+  ]
+}
