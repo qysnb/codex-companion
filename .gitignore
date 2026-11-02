@@ -60,3 +60,7 @@ docs/*
 !docs/VALIDATION-0.6.6-2026-11-02.json
 
 !docs/UPDATE-0.6.7.md
+
+# Python packaging build caches.
+__pycache__/
+*.py[cod]
